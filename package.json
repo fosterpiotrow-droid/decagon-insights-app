@@ -1,0 +1,25 @@
+{
+  "name": "decagon-insights-app",
+  "version": "1.0.0",
+  "description": "Netlify serverless function for analyzing Decagon customer support conversations using Claude API",
+  "type": "module",
+  "main": "netlify/functions/analyze.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "netlify",
+    "serverless",
+    "claude",
+    "decagon",
+    "product-insights"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
