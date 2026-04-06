@@ -188,7 +188,7 @@
         };
 
         // Upload Tab Component
-        const UploadTab = ({ onDataLoaded, onAnalyzing, isAnalyzing }) => {
+        const UploadTab = ({ onDataLoaded, onAnalyzing, isAnalyzing, conversations, onInsightsGenerated }) => {
             const [dragOver, setDragOver] = useState(false);
             const [stats, setStats] = useState(null);
             const fileInputRef = useRef(null);
@@ -291,7 +291,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             conversations: convPayload,
-                            dateRange: { start: stats.dateRange.split(' – ')[0], end: stats.dateRange.split(' – ')[1] }
+                            dateRange: stats.dateRange ? { start: stats.dateRange.min, end: stats.dateRange.max } : {}
                         })
                     });
                     if (!resp.ok) throw new Error(await resp.text());
@@ -877,65 +877,16 @@
 
             const handleAnalyzing = (analyzing) => {
                 setIsAnalyzing(analyzing);
-                if (analyzing) {
-                    // Simulate analysis - in production this calls the serverless function
-                    setTimeout(() => {
-                        setInsightsData({
-                            insights: [
-                                {
-                                    theme: "Payment Processing Issues",
-                                    summary: "Multiple users reporting failed transactions and timeouts",
-                                    frequency: "High",
-                                    product_area: "Card",
-                                    customer_signals: "Users frustrated with payment failures during checkout",
-                                    recommendation: ["Investigate transaction timeout thresholds", "Implement retry mechanism"],
-                                    url: "#"
-                                },
-                                {
-                                    theme: "Card Limits Confusion",
-                                    summary: "Users unclear about daily/monthly spending limits",
-                                    frequency: "Medium",
-                                    product_area: "Card",
-                                    customer_signals: "Users want clearer limit communication",
-                                    recommendation: ["Add real-time limit indicators in app"]
-                                },
-                                {
-                                    theme: "Subscription Cancellation Process",
-                                    summary: "Friction in subscription management and cancellation",
-                                    frequency: "High",
-                                    product_area: "Perpay+",
-                                    customer_signals: "Users want easier subscription controls",
-                                    recommendation: ["Simplify cancellation flow", "Add pause option"]
-                                },
-                                {
-                                    theme: "Marketplace Seller Ratings",
-                                    summary: "Confusion about seller ratings and reviews",
-                                    frequency: "Medium",
-                                    product_area: "Marketplace",
-                                    customer_signals: "Users want more transparency in ratings",
-                                    recommendation: ["Add rating explanation tooltips"]
-                                },
-                                {
-                                    theme: "App Performance Issues",
-                                    summary: "Reports of slow loading and crashes on Android",
-                                    frequency: "High",
-                                    product_area: "General",
-                                    customer_signals: "Users experiencing frustration with app speed",
-                                    recommendation: ["Optimize image loading", "Profile Android performance"]
-                                }
-                            ]
-                        });
-                        setIsAnalyzing(false);
-                        setActiveTab('insights');
-                    }, 3000);
-                }
+            };
+
+            const handleInsightsGenerated = (data) => {
+                setInsightsData(data);
+                setIsAnalyzing(false);
+                setActiveTab('insights');
             };
 
             const handlePublish = () => {
                 setIsPublishing(true);
-                setTimeout(() => {
-                    setIsPublishing(false);
-                }, 2000);
             };
 
             return (
@@ -992,6 +943,8 @@
                                     onDataLoaded={handleDataLoaded}
                                     onAnalyzing={handleAnalyzing}
                                     isAnalyzing={isAnalyzing}
+                                    conversations={csvData}
+                                    onInsightsGenerated={handleInsightsGenerated}
                                 />
                             )}
                             {activeTab === 'insights' && (
