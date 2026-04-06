@@ -86,7 +86,7 @@ export async function handler(event) {
     const dr = dateRange ? `${dateRange.start} to ${dateRange.end}` : 'this week';
 
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 2048,
       system: `You are a product analyst at Perpay (fintech). Analyze customer support conversations and return a JSON object only — no other text.
 
