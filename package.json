@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Netlify serverless function for analyzing Decagon customer support conversations using Claude API",
   "type": "module",
-  "main": "netlify/functions/analyze.js",
+  "main": "netlify/functions/analyze-background.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -17,7 +17,8 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.20.0"
+    "@anthropic-ai/sdk": "^0.20.0",
+    "@netlify/blobs": "^8.1.0"
   },
   "engines": {
     "node": ">=18.0.0"
