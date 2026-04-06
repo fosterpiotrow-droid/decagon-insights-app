@@ -1,8 +1,9 @@
 /**
  * Netlify Serverless Function: publish-confluence
  *
- * Publishes generated insights reports to a Confluence page by appending
- * a new weekly section. Uses Confluence REST API v2 with storage format.
+ * Publishes a condensed weekly insights summary to a Confluence page.
+ * Only includes the most critical cross-product issues — no per-product breakdown.
+ * Target: Product & Design space, page 4451237894
  */
 
 // Validate required environment variables
@@ -22,24 +23,57 @@ function getAuthHeader() {
   return `Basic ${encoded}`;
 }
 
-// Build the Confluence storage format section for the weekly insights
-function buildWeeklySection(insights) {
-  const { topInsights, allInsights, metadata } = insights;
-  const { dateRange, generatedAt, totalConversations, filteredConversations } = metadata;
+// Escape HTML special characters
+function escapeHtml(text) {
+  if (!text) return '';
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+  return String(text).replace(/[&<>"']/g, char => map[char]);
+}
 
-  // Format the generated timestamp
-  const publishDate = new Date(generatedAt).toISOString();
+// Severity color mapping
+function severityColor(severity) {
+  if (severity === 'High') return '#DC2626';
+  if (severity === 'Medium') return '#D97706';
+  return '#6B7280';
+}
 
-  let html = `<h2>Week of ${escapeHtml(dateRange)} — Generated ${publishDate}</h2>
-<hr />`;
+// Build a condensed Confluence page — replaces entire page body with latest insights
+function buildCondensedPage(insights) {
+  const { topInsights, metadata } = insights;
+  const { dateRange, generatedAt, totalConversations, filteredConversations } = metadata || {};
 
-  // Top Critical Insights section
+  const publishDate = generatedAt ? new Date(generatedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A';
+
+  let html = '';
+
+  // Header with status macro
+  html += `<ac:structured-macro ac:name="info">
+<ac:rich-text-body>
+<p><strong>Weekly Decagon Insights</strong> — ${escapeHtml(dateRange)} | Published ${publishDate}</p>
+<p>${totalConversations || 0} total conversations analyzed, ${filteredConversations || 0} flagged for review</p>
+</ac:rich-text-body>
+</ac:structured-macro>`;
+
+  // Top Issues — condensed table with only the most important
   if (topInsights && topInsights.length > 0) {
-    html += `<h3>Top Critical Insights</h3>`;
+    // Take only top 5 most critical
+    const critical = topInsights.slice(0, 5);
 
-    topInsights.forEach((insight, index) => {
+    html += `<h2>Top Issues This Week</h2>`;
+
+    html += `<table>
+<colgroup><col /><col /><col /><col /><col /></colgroup>
+<thead><tr>
+<th>Issue</th>
+<th>Product Area</th>
+<th>Impact</th>
+<th>What Customers Are Saying</th>
+<th>Recommended Action</th>
+</tr></thead>
+<tbody>`;
+
+    critical.forEach((insight) => {
       const {
-        rank = index + 1,
         theme = '',
         productArea = 'General',
         frequency = 'N/A',
@@ -49,81 +83,79 @@ function buildWeeklySection(insights) {
         recommendations = [],
       } = insight;
 
-      html += `
-<ac:structured-macro ac:name="panel">
-<ac:parameter ac:name="borderColor">#4F46E5</ac:parameter>
+      // Pick best customer quote
+      const topQuote = customerSignals.length > 0
+        ? (customerSignals[0].quote || customerSignals[0])
+        : '';
+
+      // Pick top recommendation
+      const topRec = recommendations.length > 0 ? recommendations[0] : '';
+
+      html += `<tr>
+<td><strong>${escapeHtml(theme)}</strong><br /><span style="color: #6B7280; font-size: 12px;">${escapeHtml(summary)}</span></td>
+<td>${escapeHtml(productArea)}</td>
+<td><span style="color: ${severityColor(severity)}; font-weight: bold;">${escapeHtml(severity)}</span> severity<br />${escapeHtml(frequency)} frequency</td>
+<td><em>"${escapeHtml(topQuote)}"</em></td>
+<td>${escapeHtml(topRec)}</td>
+</tr>`;
+    });
+
+    html += `</tbody></table>`;
+
+    // Expanded details for each issue (collapsed by default)
+    html += `<h2>Issue Details</h2>`;
+
+    critical.forEach((insight, index) => {
+      const {
+        theme = '',
+        productArea = 'General',
+        summary = '',
+        customerSignals = [],
+        recommendations = [],
+        conversationUrls = [],
+      } = insight;
+
+      html += `<ac:structured-macro ac:name="expand">
+<ac:parameter ac:name="title">${index + 1}. ${escapeHtml(theme)} (${escapeHtml(productArea)})</ac:parameter>
 <ac:rich-text-body>
-<h4>${escapeHtml(rank)}. ${escapeHtml(theme)}</h4>
-<p><strong>Product Area:</strong> ${escapeHtml(productArea)} | <strong>Frequency:</strong> ${escapeHtml(frequency)} | <strong>Severity:</strong> ${escapeHtml(severity)}</p>
 <p>${escapeHtml(summary)}</p>`;
 
-      if (customerSignals && customerSignals.length > 0) {
-        html += `<h5>Customer Signals</h5>`;
+      if (customerSignals.length > 0) {
+        html += `<p><strong>Customer Quotes:</strong></p>`;
         customerSignals.forEach(signal => {
           const quote = signal.quote || signal;
           html += `<blockquote><em>"${escapeHtml(quote)}"</em></blockquote>`;
         });
       }
 
-      if (recommendations && recommendations.length > 0) {
-        html += `<h5>Recommendations</h5><ul>`;
+      if (recommendations.length > 0) {
+        html += `<p><strong>Recommendations:</strong></p><ul>`;
         recommendations.forEach(rec => {
           html += `<li>${escapeHtml(rec)}</li>`;
         });
         html += `</ul>`;
       }
 
-      html += `
-</ac:rich-text-body>
+      if (conversationUrls && conversationUrls.length > 0) {
+        html += `<p><strong>Example Conversations:</strong> `;
+        html += conversationUrls.slice(0, 3).map((url, i) =>
+          `<a href="${escapeHtml(url)}">Conv ${i + 1}</a>`
+        ).join(' | ');
+        html += `</p>`;
+      }
+
+      html += `</ac:rich-text-body>
 </ac:structured-macro>`;
     });
+  } else {
+    html += `<p>No significant issues detected this week.</p>`;
   }
 
-  // Product Area Details section
-  if (allInsights) {
-    html += `<h3>Product Area Details</h3>`;
-
-    const productAreas = ['card', 'perpayPlus', 'marketplace', 'general'];
-    productAreas.forEach(area => {
-      const insights = allInsights[area] || [];
-      if (insights.length > 0) {
-        const areaLabel = area === 'perpayPlus' ? 'Perpay Plus' : area.charAt(0).toUpperCase() + area.slice(1);
-        html += `<h4>${areaLabel}</h4><table><tbody>`;
-
-        insights.forEach(insight => {
-          const { theme = '', summary = '', frequency = '', severity = '' } = insight;
-          html += `<tr>`;
-          html += `<td><strong>${escapeHtml(theme)}</strong></td>`;
-          html += `<td>${escapeHtml(summary)}</td>`;
-          html += `<td>${escapeHtml(frequency)}</td>`;
-          html += `<td>${escapeHtml(severity)}</td>`;
-          html += `</tr>`;
-        });
-
-        html += `</tbody></table>`;
-      }
-    });
-  }
-
-  // Methodology section
-  html += `<h3>Methodology</h3>
-<p>Source: Decagon AI | Period: ${escapeHtml(dateRange)} | Total Conversations: ${totalConversations} | Filtered: ${filteredConversations}</p>
-<hr />`;
+  // Footer
+  html += `<hr />
+<p style="color: #9CA3AF; font-size: 12px;">Auto-generated from Decagon AI conversations by the Weekly Insights Tool. ${totalConversations || 0} conversations scanned, ${filteredConversations || 0} flagged.</p>`;
 
   return html;
-}
-
-// Escape HTML special characters
-function escapeHtml(text) {
-  if (!text) return '';
-  const map = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;',
-  };
-  return String(text).replace(/[&<>"']/g, char => map[char]);
 }
 
 // Fetch the current Confluence page
@@ -134,10 +166,7 @@ async function fetchConfluencePage(pageId) {
 
   const response = await fetch(url, {
     method: 'GET',
-    headers: {
-      'Authorization': auth,
-      'Accept': 'application/json',
-    },
+    headers: { 'Authorization': auth, 'Accept': 'application/json' },
   });
 
   if (!response.ok) {
@@ -148,7 +177,7 @@ async function fetchConfluencePage(pageId) {
   return await response.json();
 }
 
-// Update the Confluence page with new body content
+// Update the Confluence page — replaces entire body with condensed insights
 async function updateConfluencePage(pageId, pageData, newBody) {
   const domain = process.env.CONFLUENCE_DOMAIN;
   const url = `https://${domain}/wiki/api/v2/pages/${pageId}`;
@@ -186,16 +215,8 @@ async function updateConfluencePage(pageId, pageData, newBody) {
   return await response.json();
 }
 
-// Build the page URL from the updated page data
-function buildPageUrl(domain, pageData) {
-  const spaceKey = pageData._links?.base?.match(/spaces\/([^/]+)/)?.[1] || 'UNKNOWN';
-  const pageTitle = pageData.title?.replace(/\s+/g, '+') || 'page';
-  return `https://${process.env.CONFLUENCE_DOMAIN}/wiki/spaces/${spaceKey}/pages/${pageData.id}/${pageTitle}`;
-}
-
 // Main handler
 export async function handler(event) {
-  // Add CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -203,73 +224,43 @@ export async function handler(event) {
     'Content-Type': 'application/json',
   };
 
-  // Handle preflight requests
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 204,
-      headers,
-    };
+    return { statusCode: 204, headers };
   }
 
-  // Only accept POST requests
   if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed. Use POST.' }),
-    };
+    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed. Use POST.' }) };
   }
 
   try {
-    // Validate environment variables
     validateEnvVars();
 
-    // Parse request body
     let body;
     try {
       body = JSON.parse(event.body || '{}');
     } catch (e) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Invalid JSON in request body' }),
-      };
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON in request body' }) };
     }
 
-    const { pageId, insights } = body;
-
-    // Validate required fields
-    if (!pageId) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Missing required field: pageId' }),
-      };
-    }
+    // Default to the Product & Design page if no pageId provided
+    const pageId = body.pageId || '4451237894';
+    const { insights } = body;
 
     if (!insights) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Missing required field: insights' }),
-      };
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing required field: insights' }) };
     }
 
     // Fetch current page
     const currentPage = await fetchConfluencePage(pageId);
 
-    // Build the new weekly section
-    const newSection = buildWeeklySection(insights);
-
-    // Prepend new section to existing body (or use it if body is empty)
-    const currentBody = currentPage.body?.value || '';
-    const updatedBody = newSection + '\n' + currentBody;
+    // Build condensed page content (replaces entire body)
+    const newBody = buildCondensedPage(insights);
 
     // Update the page
-    const updatedPage = await updateConfluencePage(pageId, currentPage, updatedBody);
+    const updatedPage = await updateConfluencePage(pageId, currentPage, newBody);
 
     // Build response URL
-    const pageUrl = buildPageUrl(process.env.CONFLUENCE_DOMAIN, updatedPage);
+    const pageUrl = `https://${process.env.CONFLUENCE_DOMAIN}/wiki/spaces/PD/pages/${updatedPage.id}`;
 
     return {
       statusCode: 200,
@@ -285,7 +276,6 @@ export async function handler(event) {
   } catch (error) {
     console.error('Error publishing to Confluence:', error);
 
-    // Check for missing environment variable errors
     if (error.message.includes('Missing required environment variables')) {
       return {
         statusCode: 500,
@@ -297,14 +287,10 @@ export async function handler(event) {
       };
     }
 
-    // Return generic error
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        error: 'Failed to publish insights to Confluence',
-        message: error.message,
-      }),
+      body: JSON.stringify({ error: 'Failed to publish insights to Confluence', message: error.message }),
     };
   }
 }
