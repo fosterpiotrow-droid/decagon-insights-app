@@ -274,13 +274,15 @@
             const handleAnalyze = async () => {
                 onAnalyzing(true);
                 try {
+                    // Truncate long fields to keep payload under Netlify limits
+                    const truncate = (str, max) => str && str.length > max ? str.substring(0, max) + '...' : str;
                     const convPayload = conversations.map(c => ({
-                        summary: c['Summary'] || '',
-                        resolution: c['Resolution'] || '',
+                        summary: truncate(c['Summary'] || '', 500),
+                        resolution: truncate(c['Resolution'] || '', 300),
                         tags: c['Tags'] || '',
-                        customerFeedback: c['Customer Feedback'] || '',
+                        customerFeedback: truncate(c['Customer Feedback'] || '', 300),
                         watchtowerFlags: c['Watchtower Flags'] || '',
-                        formattedMessages: c['Formatted Messages'] || '',
+                        formattedMessages: truncate(c['Formatted Messages'] || '', 1500),
                         undeflected: c['Undeflected'] || '',
                         conversationUrl: c['Conversation URL'] || '',
                         createdAt: c['Created At'] || '',
@@ -294,7 +296,12 @@
                             dateRange: stats.dateRange ? { start: stats.dateRange.min, end: stats.dateRange.max } : {}
                         })
                     });
-                    if (!resp.ok) throw new Error(await resp.text());
+                    if (!resp.ok) {
+                        const errText = await resp.text();
+                        let errMsg;
+                        try { errMsg = JSON.parse(errText).error || JSON.parse(errText).details || errText; } catch(e) { errMsg = errText; }
+                        throw new Error(errMsg);
+                    }
                     const data = await resp.json();
                     onInsightsGenerated(data);
                 } catch (err) {
