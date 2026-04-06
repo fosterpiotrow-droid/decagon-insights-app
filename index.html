@@ -271,85 +271,42 @@
                 }
             };
 
-            const [analysisStatus, setAnalysisStatus] = React.useState('');
-
             const handleAnalyze = async () => {
                 onAnalyzing(true);
-                setAnalysisStatus('Preparing data...');
                 try {
-                    // Generate a unique job ID
-                    const jobId = 'job_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-
-                    // Truncate long fields to keep payload under Netlify limits
-                    const truncate = (str, max) => str && str.length > max ? str.substring(0, max) + '...' : str;
+                    const truncate = (str, max) => str && str.length > max ? str.substring(0, max) : str;
                     const convPayload = conversations.map(c => ({
-                        summary: truncate(c['Summary'] || '', 500),
-                        resolution: truncate(c['Resolution'] || '', 300),
+                        summary: truncate(c['Summary'] || '', 300),
                         tags: c['Tags'] || '',
-                        customerFeedback: truncate(c['Customer Feedback'] || '', 300),
+                        customerFeedback: truncate(c['Customer Feedback'] || '', 150),
                         watchtowerFlags: c['Watchtower Flags'] || '',
-                        formattedMessages: truncate(c['Formatted Messages'] || '', 1500),
                         undeflected: c['Undeflected'] || '',
                         conversationUrl: c['Conversation URL'] || '',
                         createdAt: c['Created At'] || '',
-                        channel: c['metadata._decagon_channel'] || ''
                     }));
 
-                    setAnalysisStatus('Submitting to AI analysis...');
-
-                    // Submit to background function (returns 202 immediately)
-                    const resp = await fetch('/api/analyze', {
+                    const resp = await fetch('/.netlify/functions/analyze', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            jobId,
                             conversations: convPayload,
                             dateRange: stats.dateRange ? { start: stats.dateRange.min, end: stats.dateRange.max } : {}
                         })
                     });
 
-                    if (!resp.ok && resp.status !== 202) {
+                    if (!resp.ok) {
                         const errText = await resp.text();
                         let errMsg;
                         try { errMsg = JSON.parse(errText).error || errText; } catch(e) { errMsg = errText; }
                         throw new Error(errMsg);
                     }
 
-                    // Poll for results
-                    setAnalysisStatus('AI is analyzing conversations (this may take 30-90 seconds)...');
-                    const maxPolls = 120; // 120 * 3s = 6 minutes max
-                    let pollCount = 0;
-
-                    while (pollCount < maxPolls) {
-                        await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
-                        pollCount++;
-
-                        const statusResp = await fetch(`/api/analyze-status?jobId=${encodeURIComponent(jobId)}`);
-                        if (!statusResp.ok) {
-                            throw new Error('Failed to check analysis status');
-                        }
-
-                        const statusData = await statusResp.json();
-
-                        if (statusData.status === 'complete') {
-                            setAnalysisStatus('Analysis complete!');
-                            onInsightsGenerated(statusData.result);
-                            return;
-                        } else if (statusData.status === 'error') {
-                            throw new Error(statusData.error || 'Analysis failed');
-                        } else if (statusData.status === 'processing') {
-                            const elapsed = pollCount * 3;
-                            setAnalysisStatus(`AI is analyzing conversations (${elapsed}s elapsed)...`);
-                        }
-                        // If 'pending', keep polling
-                    }
-
-                    throw new Error('Analysis timed out after 6 minutes. Please try with fewer conversations.');
+                    const data = await resp.json();
+                    onInsightsGenerated(data);
                 } catch (err) {
                     alert('Analysis failed: ' + err.message);
                 } finally {
                     onAnalyzing(false);
-                    setAnalysisStatus('');
                 }
             };
 
@@ -424,7 +381,7 @@
                                 className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
                                 {isAnalyzing && <div className="spinner"></div>}
-                                {isAnalyzing ? (analysisStatus || 'Analyzing conversations...') : 'Analyze & Generate Report'}
+                                {isAnalyzing ? 'Analyzing conversations...' : 'Analyze & Generate Report'}
                             </button>
                         </div>
                     )}

@@ -4,7 +4,7 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["@anthropic-ai/sdk", "@netlify/blobs"]
+  external_node_modules = ["@anthropic-ai/sdk"]
 
 [[headers]]
   for = "/*"
@@ -12,16 +12,6 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-
-[[redirects]]
-  from = "/api/analyze"
-  to = "/.netlify/functions/analyze-background"
-  status = 200
-
-[[redirects]]
-  from = "/api/analyze-status"
-  to = "/.netlify/functions/analyze-status"
-  status = 200
 
 [[redirects]]
   from = "/api/publish"
