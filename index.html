@@ -389,130 +389,158 @@
             );
         };
 
-        // Insights Report Tab
+        // Insights Report Tab — Product team impact-optimized
         const InsightsReportTab = ({ insightsData, onPublish, isPublishing }) => {
             if (!insightsData) {
                 return (
                     <div className="text-center py-12">
-                        <p className="text-gray-500 text-lg">📊 Upload and analyze data to see insights</p>
+                        <p className="text-gray-500 text-lg">Upload and analyze data to see insights</p>
                     </div>
                 );
             }
 
-            const productAreas = ['Card', 'Perpay+', 'Marketplace', 'General'];
+            const topInsights = insightsData.topInsights || insightsData.insights || [];
+            const allInsights = insightsData.allInsights || {};
+            const metadata = insightsData.metadata || {};
 
-            const getProductColor = (area) => {
-                const colors = {
-                    'Card': 'blue',
-                    'Perpay+': 'green',
-                    'Marketplace': 'purple',
-                    'General': 'gray'
-                };
-                return colors[area] || 'gray';
+            const severityBg = { 'High': 'bg-red-100 text-red-800', 'Medium': 'bg-amber-100 text-amber-800', 'Low': 'bg-green-100 text-green-800' };
+            const freqBg = { 'High': 'bg-red-50 border-red-300', 'Medium': 'bg-amber-50 border-amber-300', 'Low': 'bg-green-50 border-green-300' };
+            const areaBg = {
+                'Card': 'border-blue-500 bg-blue-50', 'Perpay+': 'border-purple-500 bg-purple-50',
+                'Marketplace': 'border-green-500 bg-green-50', 'General': 'border-gray-500 bg-gray-50',
+                'General/Cross-product': 'border-gray-500 bg-gray-50'
+            };
+            const areaText = {
+                'Card': 'text-blue-700 bg-blue-100', 'Perpay+': 'text-purple-700 bg-purple-100',
+                'Marketplace': 'text-green-700 bg-green-100', 'General': 'text-gray-700 bg-gray-100',
+                'General/Cross-product': 'text-gray-700 bg-gray-100'
             };
 
-            const getFrequencyColor = (frequency) => {
-                const colors = {
-                    'High': 'red',
-                    'Medium': 'amber',
-                    'Low': 'green'
-                };
-                return colors[frequency] || 'gray';
-            };
+            const renderInsightCard = (insight, idx, showRank) => {
+                const quotes = insight.customerSignals || insight.customer_signals || [];
+                const recs = insight.recommendations || insight.recommendation || [];
+                const urls = insight.conversationUrls || [];
+                const area = insight.productArea || insight.product_area || 'General';
+                const quotesArr = Array.isArray(quotes) ? quotes : (quotes ? [quotes] : []);
+                const recsArr = Array.isArray(recs) ? recs : (recs ? [recs] : []);
 
-            const insights = insightsData.insights || [];
-            const topInsights = insights.slice(0, 5);
+                return (
+                    <div key={idx} className={`border-l-4 ${areaBg[area] || areaBg['General']} rounded-xl p-6 mb-4 shadow-sm`}>
+                        {/* Header row */}
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="flex items-start gap-3 flex-1">
+                                {showRank && (
+                                    <span className="flex-shrink-0 w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                                        {idx + 1}
+                                    </span>
+                                )}
+                                <div className="flex-1">
+                                    <h4 className="text-lg font-bold text-gray-900 leading-tight">{insight.theme}</h4>
+                                    <p className="text-gray-700 mt-2 text-sm leading-relaxed">{insight.summary}</p>
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 flex-shrink-0">
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${areaText[area] || areaText['General']}`}>{area}</span>
+                                {insight.severity && <span className={`px-2 py-0.5 rounded text-xs font-bold ${severityBg[insight.severity]}`}>Severity: {insight.severity}</span>}
+                                {insight.frequency && <span className={`px-2 py-0.5 rounded text-xs font-bold ${severityBg[insight.frequency]}`}>Freq: {insight.frequency}</span>}
+                            </div>
+                        </div>
+
+                        {/* Verbatim customer quotes */}
+                        {quotesArr.length > 0 && (
+                            <div className="my-4 space-y-2">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Verbatim Customer Quotes</p>
+                                {quotesArr.map((q, i) => (
+                                    <div key={i} className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex gap-3">
+                                        <span className="text-2xl text-gray-300 font-serif leading-none select-none">"</span>
+                                        <p className="text-sm text-gray-800 italic leading-relaxed flex-1">{q}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Actionable recommendations */}
+                        {recsArr.length > 0 && (
+                            <div className="my-4">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Product Recommendations</p>
+                                <div className="space-y-1.5">
+                                    {recsArr.map((rec, i) => (
+                                        <div key={i} className="flex items-start gap-2">
+                                            <span className="text-indigo-500 font-bold text-sm mt-0.5">→</span>
+                                            <p className="text-sm text-gray-800">{rec}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Conversation links */}
+                        {urls.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {urls.map((url, i) => (
+                                    <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                                        className="text-xs text-indigo-600 hover:text-indigo-800 underline">
+                                        View conversation {urls.length > 1 ? `#${i + 1}` : ''}
+                                    </a>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+            };
 
             return (
                 <div className="fade-in">
-                    {topInsights.length > 0 && (
-                        <div className="mb-8">
-                            <h3 className="text-2xl font-bold text-gray-900 mb-6">🔥 Top 5 Critical Insights</h3>
-                            <div className="space-y-4">
-                                {topInsights.map((insight, idx) => (
-                                    <div key={idx} className="bg-gradient-to-r from-indigo-50 to-blue-50 border-l-4 border-indigo-600 p-6 rounded-xl">
-                                        <div className="flex items-start gap-4">
-                                            <span className="flex-shrink-0 w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
-                                                {idx + 1}
-                                            </span>
-                                            <div className="flex-1">
-                                                <h4 className="text-lg font-bold text-gray-900">{insight.theme}</h4>
-                                                <p className="text-gray-700 mt-2">{insight.summary}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
+                    {/* Metadata banner */}
+                    {metadata.totalConversations && (
+                        <div className="bg-gray-900 text-white rounded-xl p-4 mb-6 flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                                <p className="text-xs uppercase tracking-widest text-gray-400">Analysis Summary</p>
+                                <p className="font-semibold">{metadata.dateRange || 'Date range N/A'}</p>
+                            </div>
+                            <div className="flex gap-6 text-sm">
+                                <div className="text-center"><p className="text-2xl font-bold">{metadata.totalConversations}</p><p className="text-gray-400 text-xs">Total Convos</p></div>
+                                <div className="text-center"><p className="text-2xl font-bold">{metadata.filteredConversations || '-'}</p><p className="text-gray-400 text-xs">Flagged</p></div>
+                                <div className="text-center"><p className="text-2xl font-bold">{topInsights.length}</p><p className="text-gray-400 text-xs">Key Insights</p></div>
                             </div>
                         </div>
                     )}
 
-                    <div className="mb-8">
-                        <h3 className="text-2xl font-bold text-gray-900 mb-6">Insights by Product Area</h3>
-                        <div className="space-y-8">
-                            {productAreas.map(area => {
-                                const areaInsights = insights.filter(i => i.product_area === area);
+                    {/* Top Critical Insights */}
+                    {topInsights.length > 0 && (
+                        <div className="mb-8">
+                            <h3 className="text-xl font-bold text-gray-900 mb-1">Top Critical Insights</h3>
+                            <p className="text-sm text-gray-500 mb-4">Ranked by severity x frequency — these need product attention now</p>
+                            <div>
+                                {topInsights.map((insight, idx) => renderInsightCard(insight, idx, true))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Insights by Product Area (from allInsights) */}
+                    {Object.keys(allInsights).length > 0 && (
+                        <div className="mb-8">
+                            <h3 className="text-xl font-bold text-gray-900 mb-1">All Insights by Product</h3>
+                            <p className="text-sm text-gray-500 mb-4">Complete breakdown organized by Perpay product area</p>
+                            {[
+                                { key: 'card', label: 'Card' },
+                                { key: 'perpayPlus', label: 'Perpay+' },
+                                { key: 'marketplace', label: 'Marketplace' },
+                                { key: 'general', label: 'General / Cross-product' }
+                            ].map(({ key, label }) => {
+                                const items = allInsights[key] || [];
+                                if (items.length === 0) return null;
                                 return (
-                                    <div key={area}>
-                                        <h4 className="text-xl font-bold text-gray-900 mb-4">{area}</h4>
-                                        <div className="space-y-4">
-                                            {areaInsights.length > 0 ? (
-                                                areaInsights.map((insight, idx) => (
-                                                    <div key={idx} className="insight-card bg-white p-6 rounded-xl shadow-sm">
-                                                        <div className="flex items-start justify-between mb-4">
-                                                            <h5 className="text-lg font-bold text-gray-900 flex-1">{insight.theme}</h5>
-                                                            <div className="flex gap-2 ml-4">
-                                                                <span className={`px-3 py-1 rounded-full text-xs font-semibold text-white bg-${getProductColor(area)}-500`}>
-                                                                    {area}
-                                                                </span>
-                                                                <span className={`px-3 py-1 rounded-full text-xs font-semibold text-white bg-${getFrequencyColor(insight.frequency)}-500`}>
-                                                                    {insight.frequency}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-
-                                                        <p className="text-gray-700 mb-4">{insight.summary}</p>
-
-                                                        {insight.customer_signals && (
-                                                            <div className="bg-gray-50 border-l-4 border-indigo-400 p-4 rounded mb-4">
-                                                                <p className="text-sm font-semibold text-gray-600 mb-2">💬 Customer Signals</p>
-                                                                <p className="text-gray-700 italic">"{insight.customer_signals}"</p>
-                                                            </div>
-                                                        )}
-
-                                                        {insight.recommendation && (
-                                                            <div className="mb-4">
-                                                                <p className="text-sm font-semibold text-gray-600 mb-2">💡 Opportunity / Recommendation</p>
-                                                                {Array.isArray(insight.recommendation) ? (
-                                                                    <ul className="list-disc list-inside space-y-1">
-                                                                        {insight.recommendation.map((rec, i) => (
-                                                                            <li key={i} className="text-gray-700">{rec}</li>
-                                                                        ))}
-                                                                    </ul>
-                                                                ) : (
-                                                                    <p className="text-gray-700">{insight.recommendation}</p>
-                                                                )}
-                                                            </div>
-                                                        )}
-
-                                                        {insight.url && (
-                                                            <div className="mt-4">
-                                                                <a href={insight.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline text-sm font-medium">
-                                                                    → View Conversation
-                                                                </a>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))
-                                            ) : (
-                                                <p className="text-gray-500 italic">No insights for this area</p>
-                                            )}
-                                        </div>
+                                    <div key={key} className="mb-6">
+                                        <h4 className="text-lg font-bold text-gray-800 mb-3 pb-1 border-b border-gray-200">{label} <span className="text-sm font-normal text-gray-500">({items.length} insight{items.length !== 1 ? 's' : ''})</span></h4>
+                                        {items.map((insight, idx) => renderInsightCard(insight, idx, false))}
                                     </div>
                                 );
                             })}
                         </div>
-                    </div>
+                    )}
 
+                    {/* Publish button */}
                     <div className="mt-8 pt-6 border-t border-gray-200">
                         <button
                             onClick={onPublish}
@@ -520,197 +548,190 @@
                             className="w-full px-6 py-3 bg-emerald-500 text-white rounded-lg font-semibold hover:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             {isPublishing && <div className="spinner"></div>}
-                            {isPublishing ? 'Publishing...' : '📰 Publish to Confluence'}
+                            {isPublishing ? 'Publishing...' : 'Publish to Confluence'}
                         </button>
                     </div>
                 </div>
             );
         };
 
-        // Conversations Tab
+        // Product Summary Tab (replaces full Conversations Tab)
         const ConversationsTab = ({ conversations }) => {
-            const [searchTerm, setSearchTerm] = useState('');
-            const [productAreaFilter, setProductAreaFilter] = useState('All');
-            const [channelFilter, setChannelFilter] = useState('All');
-            const [flaggedOnly, setFlaggedOnly] = useState(false);
-            const [escalatedOnly, setEscalatedOnly] = useState(false);
-            const [expandedRow, setExpandedRow] = useState(null);
+            const [expandedArea, setExpandedArea] = useState(null);
+            const [expandedConv, setExpandedConv] = useState(null);
 
             if (!conversations || conversations.length === 0) {
                 return (
                     <div className="text-center py-12">
-                        <p className="text-gray-500 text-lg">💬 Upload data to see conversations</p>
+                        <p className="text-gray-500 text-lg">Upload data to see product area summaries</p>
                     </div>
                 );
             }
 
-            const productAreas = ['All', ...new Set(conversations.map(c => deriveProductArea(c.Tags)))];
-            const channels = ['All', ...new Set(conversations.map(c => c['metadata._decagon_channel'] || 'Unknown'))];
+            const areaConfig = {
+                'Card': { color: 'blue', icon: 'CC', desc: 'Credit card, payments, transactions' },
+                'Perpay+': { color: 'purple', icon: 'P+', desc: 'Subscription, membership, benefits' },
+                'Marketplace': { color: 'green', icon: 'MK', desc: 'Shopping, orders, delivery' },
+                'General': { color: 'gray', icon: 'GN', desc: 'Account, cross-product, other' }
+            };
 
-            const filtered = conversations.filter(conv => {
-                const matchesSearch = conv.Summary?.toLowerCase().includes(searchTerm.toLowerCase()) || false;
-                const matchesArea = productAreaFilter === 'All' || deriveProductArea(conv.Tags) === productAreaFilter;
-                const matchesChannel = channelFilter === 'All' || conv['metadata._decagon_channel'] === channelFilter;
-                const matchesFlagged = !flaggedOnly || isFlagged(conv);
-                const matchesEscalated = !escalatedOnly || conv.Undeflected === 'True';
+            const areas = ['Card', 'Perpay+', 'Marketplace', 'General'];
 
-                return matchesSearch && matchesArea && matchesChannel && matchesFlagged && matchesEscalated;
+            // Score conversations by actionability (lower = more actionable)
+            const scoreConv = (conv) => {
+                let score = 0;
+                const cxScore = getCXScore(conv);
+                if (cxScore !== null) score += (6 - cxScore) * 3; // Low CX = high priority
+                if (isFlagged(conv)) score += 5;
+                if (conv.Undeflected === 'True') score += 4;
+                const summary = (conv.Summary || '').toLowerCase();
+                const actionWords = ['frustrated', 'cancel', 'close account', 'refund', 'not working', 'broken', 'disappointed', 'angry', 'worst', 'scam', 'stolen', 'unauthorized', 'never received', 'still waiting', 'ridiculous', 'unacceptable', 'misleading', 'confused'];
+                actionWords.forEach(w => { if (summary.includes(w)) score += 2; });
+                return score;
+            };
+
+            // Group and rank
+            const grouped = {};
+            areas.forEach(area => {
+                const areaConvs = conversations.filter(c => deriveProductArea(c.Tags) === area);
+                const flaggedCount = areaConvs.filter(c => isFlagged(c)).length;
+                const escalatedCount = areaConvs.filter(c => c.Undeflected === 'True').length;
+                const cxScores = areaConvs.map(c => getCXScore(c)).filter(s => s !== null);
+                const avgCx = cxScores.length > 0 ? (cxScores.reduce((a, b) => a + b, 0) / cxScores.length).toFixed(1) : null;
+                const topConvs = [...areaConvs].sort((a, b) => scoreConv(b) - scoreConv(a)).slice(0, 5);
+
+                grouped[area] = { total: areaConvs.length, flaggedCount, escalatedCount, avgCx, topConvs };
             });
 
-            const formatMessages = (messagesJson) => {
-                const messages = parseFormattedMessages(messagesJson);
-                if (!Array.isArray(messages)) return [];
-
-                return messages.map(msg => {
-                    if (typeof msg === 'string') {
-                        const aiMatch = msg.match(/^\[AI\]\s*(.*)$/);
-                        const userMatch = msg.match(/^\[USER\]\s*(.*)$/);
-                        const agentMatch = msg.match(/^\[AGENT\]\s*(.*)$/);
-
-                        if (aiMatch) return { type: 'ai', text: aiMatch[1] };
-                        if (userMatch) return { type: 'user', text: userMatch[1] };
-                        if (agentMatch) return { type: 'agent', text: agentMatch[1] };
-                        return { type: 'unknown', text: msg };
-                    }
-                    return msg;
-                });
+            const colorMap = {
+                blue: { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-800', header: 'text-blue-900', accent: 'bg-blue-600' },
+                purple: { bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-800', header: 'text-purple-900', accent: 'bg-purple-600' },
+                green: { bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-100 text-green-800', header: 'text-green-900', accent: 'bg-green-600' },
+                gray: { bg: 'bg-gray-50', border: 'border-gray-200', badge: 'bg-gray-100 text-gray-800', header: 'text-gray-900', accent: 'bg-gray-600' }
             };
 
             return (
-                <div className="fade-in">
-                    <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-                        <input
-                            type="text"
-                            placeholder="🔍 Search conversations..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
-
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                            <select
-                                value={productAreaFilter}
-                                onChange={(e) => setProductAreaFilter(e.target.value)}
-                                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            >
-                                {productAreas.map(area => (
-                                    <option key={area}>{area}</option>
-                                ))}
-                            </select>
-
-                            <select
-                                value={channelFilter}
-                                onChange={(e) => setChannelFilter(e.target.value)}
-                                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            >
-                                {channels.map(channel => (
-                                    <option key={channel}>{channel}</option>
-                                ))}
-                            </select>
-
-                            <label className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-                                <input
-                                    type="checkbox"
-                                    checked={flaggedOnly}
-                                    onChange={(e) => setFlaggedOnly(e.target.checked)}
-                                    className="w-4 h-4"
-                                />
-                                <span>Flagged Only</span>
-                            </label>
-
-                            <label className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
-                                <input
-                                    type="checkbox"
-                                    checked={escalatedOnly}
-                                    onChange={(e) => setEscalatedOnly(e.target.checked)}
-                                    className="w-4 h-4"
-                                />
-                                <span>Escalated Only</span>
-                            </label>
-                        </div>
+                <div className="fade-in space-y-6">
+                    {/* Overview stats row */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {areas.map(area => {
+                            const data = grouped[area];
+                            const cfg = areaConfig[area];
+                            const colors = colorMap[cfg.color];
+                            return (
+                                <div key={area}
+                                    className={`${colors.bg} border ${colors.border} rounded-xl p-4 cursor-pointer hover:shadow-md transition`}
+                                    onClick={() => setExpandedArea(expandedArea === area ? null : area)}
+                                >
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className={`${colors.accent} text-white text-xs font-bold px-2 py-1 rounded`}>{cfg.icon}</span>
+                                        <span className={`font-semibold ${colors.header}`}>{area}</span>
+                                    </div>
+                                    <p className="text-2xl font-bold text-gray-900">{data.total}</p>
+                                    <p className="text-xs text-gray-500">conversations</p>
+                                    <div className="flex gap-3 mt-2 text-xs">
+                                        {data.flaggedCount > 0 && (
+                                            <span className="text-red-600 font-semibold">{data.flaggedCount} flagged</span>
+                                        )}
+                                        {data.escalatedCount > 0 && (
+                                            <span className="text-amber-600 font-semibold">{data.escalatedCount} escalated</span>
+                                        )}
+                                    </div>
+                                    {data.avgCx && (
+                                        <p className="text-xs text-gray-500 mt-1">Avg CX: <span className={`font-semibold ${parseFloat(data.avgCx) <= 3 ? 'text-red-600' : 'text-green-600'}`}>{data.avgCx}/5</span></p>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
 
-                    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead className="bg-gray-50 border-b border-gray-200">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600">Channel</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600">Product Area</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600">Summary</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600">CX Score</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {filtered.map((conv, idx) => (
-                                        <React.Fragment key={idx}>
-                                            <tr
-                                                className="hover:bg-gray-50 cursor-pointer transition"
-                                                onClick={() => setExpandedRow(expandedRow === idx ? null : idx)}
-                                            >
-                                                <td className="px-6 py-4 text-sm text-gray-900">{formatDate(conv['Created At'])}</td>
-                                                <td className="px-6 py-4 text-sm text-gray-600">{conv['metadata._decagon_channel'] || '-'}</td>
-                                                <td className="px-6 py-4 text-sm">
-                                                    <span className="px-2 py-1 bg-indigo-100 text-indigo-800 rounded text-xs font-medium">
-                                                        {deriveProductArea(conv.Tags)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-sm text-gray-600">{truncate(conv.Summary, 80)}</td>
-                                                <td className="px-6 py-4 text-sm font-semibold text-indigo-600">
-                                                    {getCXScore(conv) || '-'}
-                                                </td>
-                                                <td className="px-6 py-4 text-sm">
-                                                    <div className="flex gap-2">
-                                                        {isFlagged(conv) && (
-                                                            <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-semibold">Review</span>
-                                                        )}
-                                                        {conv.Undeflected === 'True' && (
-                                                            <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs font-semibold">Escalated</span>
-                                                        )}
+                    {/* Expanded product area detail */}
+                    {areas.map(area => {
+                        if (expandedArea !== area) return null;
+                        const data = grouped[area];
+                        const cfg = areaConfig[area];
+                        const colors = colorMap[cfg.color];
+
+                        return (
+                            <div key={area} className={`${colors.bg} border ${colors.border} rounded-xl p-6 fade-in`}>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h3 className={`text-lg font-bold ${colors.header}`}>{area} — Top Actionable Conversations</h3>
+                                        <p className="text-sm text-gray-500">{cfg.desc} | {data.total} total, {data.flaggedCount} flagged, {data.escalatedCount} escalated</p>
+                                    </div>
+                                    <button onClick={() => setExpandedArea(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">x</button>
+                                </div>
+
+                                {data.topConvs.length === 0 ? (
+                                    <p className="text-gray-500 text-sm">No conversations in this product area.</p>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {data.topConvs.map((conv, idx) => {
+                                            const convKey = `${area}-${idx}`;
+                                            const isExpanded = expandedConv === convKey;
+                                            const cxScore = getCXScore(conv);
+                                            return (
+                                                <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                                    <div
+                                                        className="p-4 cursor-pointer hover:bg-gray-50 transition"
+                                                        onClick={() => setExpandedConv(isExpanded ? null : convKey)}
+                                                    >
+                                                        <div className="flex items-start justify-between gap-4">
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-sm font-medium text-gray-900 mb-1">{conv.Summary || 'No summary available'}</p>
+                                                                <div className="flex flex-wrap gap-2 items-center">
+                                                                    <span className="text-xs text-gray-500">{formatDate(conv['Created At'])}</span>
+                                                                    <span className="text-xs text-gray-400">|</span>
+                                                                    <span className="text-xs text-gray-500">{conv['metadata._decagon_channel'] || 'Unknown'}</span>
+                                                                    {cxScore !== null && (
+                                                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${cxScore <= 2 ? 'bg-red-100 text-red-700' : cxScore <= 3 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                                                                            CX: {cxScore}/5
+                                                                        </span>
+                                                                    )}
+                                                                    {isFlagged(conv) && (
+                                                                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-red-100 text-red-700">Needs Review</span>
+                                                                    )}
+                                                                    {conv.Undeflected === 'True' && (
+                                                                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-700">Escalated</span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <span className="text-gray-400 text-sm mt-1">{isExpanded ? '▲' : '▼'}</span>
+                                                        </div>
                                                     </div>
-                                                </td>
-                                            </tr>
 
-                                            {expandedRow === idx && (
-                                                <tr className="bg-gray-50">
-                                                    <td colSpan="6" className="px-6 py-4">
-                                                        <div className="space-y-4">
-                                                            <div>
-                                                                <h4 className="font-semibold text-gray-900 mb-2">Summary</h4>
-                                                                <p className="text-gray-700">{conv.Summary || '-'}</p>
-                                                            </div>
-
-                                                            <div>
-                                                                <h4 className="font-semibold text-gray-900 mb-2">Resolution</h4>
-                                                                <p className="text-gray-700">{conv.Resolution || '-'}</p>
-                                                            </div>
-
-                                                            {formatMessages(conv['Formatted Messages']).length > 0 && (
+                                                    {isExpanded && (
+                                                        <div className="border-t border-gray-100 p-4 bg-gray-50 space-y-3">
+                                                            {conv.Resolution && (
                                                                 <div>
-                                                                    <h4 className="font-semibold text-gray-900 mb-3">Transcript</h4>
-                                                                    <div className="space-y-2 bg-white p-4 rounded-lg">
-                                                                        {formatMessages(conv['Formatted Messages']).map((msg, i) => (
-                                                                            <div key={i} className={`chat-bubble ${msg.type}`}>
-                                                                                <span className="font-semibold capitalize">[{msg.type}]</span> {msg.text}
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
+                                                                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Resolution</p>
+                                                                    <p className="text-sm text-gray-700">{conv.Resolution}</p>
                                                                 </div>
                                                             )}
+                                                            {conv['Customer Feedback'] && (
+                                                                <div>
+                                                                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Customer Feedback</p>
+                                                                    <p className="text-sm text-gray-700">{conv['Customer Feedback']}</p>
+                                                                </div>
+                                                            )}
+                                                            {conv['Conversation URL'] && (
+                                                                <a href={conv['Conversation URL']} target="_blank" rel="noopener noreferrer"
+                                                                    className="inline-block text-sm text-indigo-600 hover:text-indigo-800 font-medium">
+                                                                    View full conversation in Decagon →
+                                                                </a>
+                                                            )}
                                                         </div>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </React.Fragment>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
 
-                    <p className="text-sm text-gray-600 mt-4">Showing {filtered.length} of {conversations.length} conversations</p>
+                    <p className="text-sm text-gray-500 text-center">Showing top 5 most actionable conversations per product area from {conversations.length} total</p>
                 </div>
             );
         };
@@ -954,7 +975,7 @@
                                 className={`tab-button ${activeTab === 'conversations' ? 'active' : ''}`}
                                 disabled={!csvData}
                             >
-                                💬 Conversations
+                                📋 By Product Area
                             </button>
                             <button
                                 onClick={() => setActiveTab('confluence')}
