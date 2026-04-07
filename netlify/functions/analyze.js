@@ -17,8 +17,8 @@ export default async function handler(req, context) {
     }
 
     // Sample up to 3 conversations (already pre-sampled client-side, but cap here too)
-    const sampled = conversations.length > 3
-      ? [...conversations].sort(() => Math.random() - 0.5).slice(0, 3)
+    const sampled = conversations.length > 5
+      ? [...conversations].sort(() => Math.random() - 0.5).slice(0, 5)
       : conversations;
 
     const tr = (s, n) => s && s.length > n ? s.substring(0, n) + '...' : (s || '');
@@ -43,7 +43,7 @@ Respond ONLY with raw JSON (no markdown, no code fences):
       msg = await client.messages.create(
         {
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 600,
+          max_tokens: 1000,
           messages: [{ role: 'user', content: prompt }],
         },
         { signal: controller.signal }
