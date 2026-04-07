@@ -135,7 +135,8 @@ async function updatePage(pageId, pageData, body) {
       id: pageData.id,
       status: 'current',
       title: pageData.title,
-      version: { number: (pageData.version?.number || 0) + 1 },
+      // Draft pages (status='draft') must use version 1 on first publish; published pages increment
+      version: { number: pageData.status === 'draft' ? 1 : (pageData.version?.number || 0) + 1 },
       body: { representation: 'storage', value: body },
     }),
   });
