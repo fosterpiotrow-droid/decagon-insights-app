@@ -3,1007 +3,710 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Perpay — Weekly Product Decagon Insights</title>
-
-    <!-- Tailwind CSS -->
+    <title>Perpay â Weekly Product Decagon Insights</title>
     <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-    <!-- Babel Standalone for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- Papa Parse for CSV -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-        }
-
-        .chat-bubble {
-            border-radius: 12px;
-            padding: 12px 16px;
-            margin-bottom: 8px;
-            line-height: 1.5;
-        }
-
-        .chat-bubble.ai {
-            background-color: #f3f4f6;
-            border-left: 4px solid #6366f1;
-        }
-
-        .chat-bubble.user {
-            background-color: #eff6ff;
-            border-left: 4px solid #3b82f6;
-        }
-
-        .chat-bubble.agent {
-            background-color: #fefce8;
-            border-left: 4px solid #f59e0b;
-        }
-
-        .drag-drop-zone {
-            transition: all 0.3s ease;
-        }
-
-        .drag-drop-zone.drag-over {
-            background-color: #eef2ff;
-            border-color: #6366f1;
-        }
-
-        .spinner {
-            border: 3px solid #f3f4f6;
-            border-top: 3px solid #6366f1;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .fade-in {
-            animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .insight-card {
-            border-left: 4px solid #6366f1;
-        }
-
-        .tab-button {
-            position: relative;
-            padding: 12px 24px;
-            font-weight: 500;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.3s ease;
-        }
-
-        .tab-button.active {
-            color: #6366f1;
-            border-bottom-color: #6366f1;
-        }
-
-        .tab-button:hover {
-            color: #6366f1;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; }
+        .spinner { border: 3px solid #f3f4f6; border-top: 3px solid #6366f1; border-radius: 50%; width: 22px; height: 22px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .fade-in { animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .drag-drop-zone { transition: all 0.3s ease; }
+        .drag-drop-zone.drag-over { background-color: #eef2ff; border-color: #6366f1; }
+        .tab-button { position: relative; padding: 12px 24px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s ease; color: #6b7280; }
+        .tab-button.active { color: #6366f1; border-bottom-color: #6366f1; }
+        .tab-button:hover:not(:disabled) { color: #6366f1; }
+        .tab-button:disabled { opacity: 0.4; cursor: not-allowed; }
     </style>
 </head>
 <body class="bg-gray-50">
-    <div id="root"></div>
+<div id="root"></div>
+<script type="text/babel">
+    const { useState, useRef } = React;
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+    const formatDate = (ds) => {
+        try { return new Date(ds).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); }
+        catch { return ds || '-'; }
+    };
 
-        // Utility functions
-        const formatDate = (dateString) => {
-            try {
-                return new Date(dateString).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
-                });
-            } catch {
-                return dateString || '-';
-            }
-        };
+    const parseWatchtowerFlags = (f) => {
+        try { return f ? (typeof f === 'string' ? JSON.parse(f) : f) : []; } catch { return []; }
+    };
 
-        const truncate = (str, length = 100) => {
-            if (!str) return '-';
-            return str.length > length ? str.substring(0, length) + '...' : str;
-        };
+    const deriveProductArea = (tags) => {
+        if (!tags) return 'General';
+        const t = tags.toLowerCase();
+        if (t.includes('card')) return 'Card';
+        if (t.includes('perpay+') || t.includes('subscription')) return 'Perpay+';
+        if (t.includes('marketplace') || t.includes('shopping') || t.includes('order')) return 'Marketplace';
+        return 'General';
+    };
 
-        const parseWatchtowerFlags = (flagsJson) => {
-            try {
-                if (!flagsJson) return [];
-                if (typeof flagsJson === 'string') {
-                    return JSON.parse(flagsJson);
-                }
-                return flagsJson;
-            } catch {
-                return [];
-            }
-        };
+    const isFlagged = (conv) => {
+        const flags = parseWatchtowerFlags(conv['Watchtower Flags']);
+        const cx = flags.find(f => (f.job_name || f.flagType || '') === 'CX by Intent');
+        if (cx && (cx.rubric_score || cx.score) <= 3) return true;
+        if (flags.find(f => ((f.job_name || f.flagType || '') + '').includes('Complaint') && f.flagged === true)) return true;
+        const kws = ['frustrated','cancel','close account','refund','not working','broken','disappointed','angry'];
+        if (kws.some(kw => (conv.Summary || '').toLowerCase().includes(kw))) return true;
+        if (conv.Undeflected === 'True') return true;
+        return false;
+    };
 
-        const parseFormattedMessages = (messagesJson) => {
-            try {
-                if (!messagesJson) return [];
-                if (typeof messagesJson === 'string') {
-                    return JSON.parse(messagesJson);
-                }
-                return messagesJson;
-            } catch {
-                return [];
-            }
-        };
+    const getCXScore = (conv) => {
+        const flags = parseWatchtowerFlags(conv['Watchtower Flags']);
+        const f = flags.find(f => (f.job_name || f.flagType || '') === 'CX by Intent');
+        return f ? (f.rubric_score || f.score) : null;
+    };
 
-        const deriveProductArea = (tags) => {
-            if (!tags) return 'General';
-            const tagsLower = tags.toLowerCase();
-            if (tagsLower.includes('card')) return 'Card';
-            if (tagsLower.includes('perpay+') || tagsLower.includes('subscription')) return 'Perpay+';
-            if (tagsLower.includes('marketplace') || tagsLower.includes('shopping') || tagsLower.includes('order')) return 'Marketplace';
-            return 'General';
-        };
+    // âââ Upload Tab âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    const UploadTab = ({ onDataLoaded, onAnalyzing, isAnalyzing, conversations, onInsightsGenerated }) => {
+        const [dragOver, setDragOver] = useState(false);
+        const [stats, setStats] = useState(null);
+        const fileInputRef = useRef(null);
 
-        const isFlagged = (conversation) => {
-            const flags = parseWatchtowerFlags(conversation['Watchtower Flags']);
-
-            // Check CX by Intent score
-            const cxFlag = flags.find(f => f.job_name === 'CX by Intent');
-            if (cxFlag && cxFlag.rubric_score <= 3) return true;
-
-            // Check Complaint flags
-            const complaintFlag = flags.find(f =>
-                f.job_name && f.job_name.includes('Complaint') && f.flagged === true
-            );
-            if (complaintFlag) return true;
-
-            // Check summary keywords
-            const summary = (conversation.Summary || '').toLowerCase();
-            const flagKeywords = ['frustrated', 'close account', 'cancel', 'refund', 'not working', 'broken', 'disappointed', 'angry'];
-            if (flagKeywords.some(kw => summary.includes(kw))) return true;
-
-            // Check Undeflected
-            if (conversation.Undeflected === 'True') return true;
-
-            return false;
-        };
-
-        const getCXScore = (conversation) => {
-            const flags = parseWatchtowerFlags(conversation['Watchtower Flags']);
-            const cxFlag = flags.find(f => f.job_name === 'CX by Intent');
-            return cxFlag ? cxFlag.rubric_score : null;
-        };
-
-        // Upload Tab Component
-        const UploadTab = ({ onDataLoaded, onAnalyzing, isAnalyzing, conversations, onInsightsGenerated }) => {
-            const [dragOver, setDragOver] = useState(false);
-            const [stats, setStats] = useState(null);
-            const fileInputRef = useRef(null);
-
-            const parseCSV = (file) => {
-                Papa.parse(file, {
-                    header: true,
-                    dynamicTyping: false,
-                    skipEmptyLines: true,
-                    complete: (results) => {
-                        if (results.data && results.data.length > 0) {
-                            calculateStats(results.data);
-                            onDataLoaded(results.data);
-                        }
-                    },
-                    error: (error) => {
-                        alert('Error parsing CSV: ' + error.message);
+        const parseCSV = (file) => {
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: false,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    if (results.data && results.data.length > 0) {
+                        const s = calcStats(results.data);
+                        setStats(s);
+                        onDataLoaded(results.data);
                     }
-                });
-            };
-
-            const calculateStats = (data) => {
-                const totalConversations = data.length;
-
-                let flaggedCount = 0;
-                let escalatedCount = 0;
-                let cxScores = [];
-                const channelCounts = {};
-                let dates = [];
-
-                data.forEach(row => {
-                    if (isFlagged(row)) flaggedCount++;
-                    if (row.Undeflected === 'True') escalatedCount++;
-
-                    const cxScore = getCXScore(row);
-                    if (cxScore !== null) cxScores.push(cxScore);
-
-                    const channel = row['metadata._decagon_channel'] || 'Unknown';
-                    channelCounts[channel] = (channelCounts[channel] || 0) + 1;
-
-                    if (row['Created At']) dates.push(new Date(row['Created At']));
-                });
-
-                const avgCXScore = cxScores.length > 0
-                    ? (cxScores.reduce((a, b) => a + b, 0) / cxScores.length).toFixed(2)
-                    : 'N/A';
-
-                const dateRange = dates.length > 0
-                    ? {
-                        min: new Date(Math.min(...dates)).toLocaleDateString(),
-                        max: new Date(Math.max(...dates)).toLocaleDateString()
-                    }
-                    : null;
-
-                setStats({
-                    totalConversations,
-                    flaggedCount,
-                    escalatedCount,
-                    avgCXScore,
-                    channelCounts,
-                    dateRange
-                });
-            };
-
-            const handleDrop = (e) => {
-                e.preventDefault();
-                setDragOver(false);
-                const file = e.dataTransfer.files[0];
-                if (file && file.type === 'text/csv') {
-                    parseCSV(file);
-                } else {
-                    alert('Please drop a CSV file');
-                }
-            };
-
-            const handleFileSelect = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    parseCSV(file);
-                }
-            };
-
-            const handleAnalyze = async () => {
-                onAnalyzing(true);
-                try {
-                    const truncate = (str, max) => str && str.length > max ? str.substring(0, max) : str;
-                    const KEYWORDS = ['frustrated','close account','cancel','refund','not working',
-                        'broken','disappointed','angry','worst','scam','stolen','unauthorized',
-                        'never received','still waiting','ridiculous','unacceptable','misleading','confused'];
-                    const scored = conversations.map(c => {
-                        let score = 0;
-                        if (c['Undeflected'] === 'True') score += 10;
-                        const sum = (c['Summary'] || '').toLowerCase();
-                        KEYWORDS.forEach(kw => { if (sum.includes(kw)) score += 3; });
-                        if (c['Customer Feedback'] && c['Customer Feedback'].trim().length > 10) score += 5;
-                        try {
-                            const flags = JSON.parse(c['Watchtower Flags'] || '[]');
-                            if (Array.isArray(flags) && flags.length > 0) {
-                                if (flags.find(f => f.flagType === 'CX by Intent' && f.score <= 3)) score += 8;
-                                if (flags.find(f => f.flagType === 'Complaint' && f.flagged === true)) score += 6;
-                            }
-                        } catch(e) {}
-                        return { conv: c, score };
-                    });
-                    const actionable = scored.filter(({ score }) => score > 0);
-                    if (actionable.length === 0) {
-                        alert('No actionable conversations found in this CSV.');
-                        onAnalyzing(false); return;
-                    }
-                    const top = actionable.sort((a, b) => b.score - a.score).slice(0, 300);
-                    const convPayload = top.map(({ conv: c }) => ({
-                        summary: truncate(c['Summary'] || '', 300),
-                        tags: c['Tags'] || '',
-                        customerFeedback: truncate(c['Customer Feedback'] || '', 150),
-                        undeflected: c['Undeflected'] || '',
-                        conversationUrl: c['Conversation URL'] || '',
-                        createdAt: c['Created At'] || '',
-                    }));
-                    const resp = await fetch('/.netlify/functions/analyze', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            conversations: convPayload,
-                            dateRange: stats.dateRange ? { start: stats.dateRange.min, end: stats.dateRange.max } : {}
-                        })
-                    });
-                    if (!resp.ok) {
-                        const errText = await resp.text();
-                        let errMsg;
-                        try { errMsg = JSON.parse(errText).error || errText; } catch(e) { errMsg = errText; }
-                        throw new Error(errMsg);
-                    }
-                    const data = await resp.json();
-                    onInsightsGenerated(data);
-                } catch (err) {
-                    alert('Analysis failed: ' + err.message);
-                } finally {
-                    onAnalyzing(false);
-                }
-            };
-
-            return (
-                <div className="fade-in">
-                    <div
-                        className="drag-drop-zone border-2 border-dashed border-gray-300 rounded-xl p-12 text-center cursor-pointer hover:border-indigo-400"
-                        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                        onDragLeave={() => setDragOver(false)}
-                        onDrop={handleDrop}
-                        onClick={() => fileInputRef.current?.click()}
-                    >
-                        <div className="text-4xl mb-4">📁</div>
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">Upload Decagon CSV</h3>
-                        <p className="text-gray-600 mb-4">Drag and drop your CSV file here, or click to browse</p>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".csv"
-                            onChange={handleFileSelect}
-                            className="hidden"
-                        />
-                        <button className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
-                            Select File
-                        </button>
-                    </div>
-
-                    {stats && (
-                        <div className="mt-8 fade-in">
-                            <h3 className="text-xl font-bold text-gray-900 mb-4">Upload Summary</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                <div className="bg-white p-6 rounded-xl shadow-sm">
-                                    <p className="text-gray-600 text-sm font-medium">Total Conversations</p>
-                                    <p className="text-3xl font-bold text-indigo-600">{stats.totalConversations}</p>
-                                </div>
-                                <div className="bg-white p-6 rounded-xl shadow-sm">
-                                    <p className="text-gray-600 text-sm font-medium">Flagged for Review</p>
-                                    <p className="text-3xl font-bold text-red-500">{stats.flaggedCount}</p>
-                                </div>
-                                <div className="bg-white p-6 rounded-xl shadow-sm">
-                                    <p className="text-gray-600 text-sm font-medium">Escalated (Undeflected)</p>
-                                    <p className="text-3xl font-bold text-amber-500">{stats.escalatedCount}</p>
-                                </div>
-                                <div className="bg-white p-6 rounded-xl shadow-sm">
-                                    <p className="text-gray-600 text-sm font-medium">Avg CX Score</p>
-                                    <p className="text-3xl font-bold text-emerald-500">{stats.avgCXScore}</p>
-                                </div>
-                            </div>
-
-                            {stats.dateRange && (
-                                <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-                                    <p className="text-gray-600 text-sm font-medium mb-2">Date Range</p>
-                                    <p className="text-gray-900">{stats.dateRange.min} to {stats.dateRange.max}</p>
-                                </div>
-                            )}
-
-                            <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-                                <p className="text-gray-600 text-sm font-medium mb-4">Channel Breakdown</p>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    {Object.entries(stats.channelCounts).map(([channel, count]) => (
-                                        <div key={channel} className="border border-gray-200 rounded-lg p-4">
-                                            <p className="text-gray-700 font-medium">{channel}</p>
-                                            <p className="text-2xl font-bold text-indigo-600">{count}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <button
-                                onClick={handleAnalyze}
-                                disabled={isAnalyzing}
-                                className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                                {isAnalyzing && <div className="spinner"></div>}
-                                {isAnalyzing ? 'Analyzing conversations...' : 'Analyze & Generate Report'}
-                            </button>
-                        </div>
-                    )}
-
-                    {!stats && (
-                        <div className="mt-12 text-center text-gray-500">
-                            <p className="text-lg">👆 Start by uploading a Decagon CSV file</p>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-        // Insights Report Tab — Product team impact-optimized
-        const InsightsReportTab = ({ insightsData, onPublish, isPublishing }) => {
-            if (!insightsData) {
-                return (
-                    <div className="text-center py-12">
-                        <p className="text-gray-500 text-lg">Upload and analyze data to see insights</p>
-                    </div>
-                );
-            }
-
-            const topInsights = insightsData.topInsights || insightsData.insights || [];
-            const allInsights = insightsData.allInsights || {};
-            const metadata = insightsData.metadata || {};
-
-            const severityBg = { 'High': 'bg-red-100 text-red-800', 'Medium': 'bg-amber-100 text-amber-800', 'Low': 'bg-green-100 text-green-800' };
-            const freqBg = { 'High': 'bg-red-50 border-red-300', 'Medium': 'bg-amber-50 border-amber-300', 'Low': 'bg-green-50 border-green-300' };
-            const areaBg = {
-                'Card': 'border-blue-500 bg-blue-50', 'Perpay+': 'border-purple-500 bg-purple-50',
-                'Marketplace': 'border-green-500 bg-green-50', 'General': 'border-gray-500 bg-gray-50',
-                'General/Cross-product': 'border-gray-500 bg-gray-50'
-            };
-            const areaText = {
-                'Card': 'text-blue-700 bg-blue-100', 'Perpay+': 'text-purple-700 bg-purple-100',
-                'Marketplace': 'text-green-700 bg-green-100', 'General': 'text-gray-700 bg-gray-100',
-                'General/Cross-product': 'text-gray-700 bg-gray-100'
-            };
-
-            const renderInsightCard = (insight, idx, showRank) => {
-                const quotes = insight.customerSignals || insight.customer_signals || [];
-                const recs = insight.recommendations || insight.recommendation || [];
-                const urls = insight.conversationUrls || [];
-                const area = insight.productArea || insight.product_area || 'General';
-                const quotesArr = Array.isArray(quotes) ? quotes : (quotes ? [quotes] : []);
-                const recsArr = Array.isArray(recs) ? recs : (recs ? [recs] : []);
-
-                return (
-                    <div key={idx} className={`border-l-4 ${areaBg[area] || areaBg['General']} rounded-xl p-6 mb-4 shadow-sm`}>
-                        {/* Header row */}
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                            <div className="flex items-start gap-3 flex-1">
-                                {showRank && (
-                                    <span className="flex-shrink-0 w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center font-bold text-sm">
-                                        {idx + 1}
-                                    </span>
-                                )}
-                                <div className="flex-1">
-                                    <h4 className="text-lg font-bold text-gray-900 leading-tight">{insight.theme}</h4>
-                                    <p className="text-gray-700 mt-2 text-sm leading-relaxed">{insight.summary}</p>
-                                </div>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 flex-shrink-0">
-                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${areaText[area] || areaText['General']}`}>{area}</span>
-                                {insight.severity && <span className={`px-2 py-0.5 rounded text-xs font-bold ${severityBg[insight.severity]}`}>Severity: {insight.severity}</span>}
-                                {insight.frequency && <span className={`px-2 py-0.5 rounded text-xs font-bold ${severityBg[insight.frequency]}`}>Freq: {insight.frequency}</span>}
-                            </div>
-                        </div>
-
-                        {/* Verbatim customer quotes */}
-                        {quotesArr.length > 0 && (
-                            <div className="my-4 space-y-2">
-                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Verbatim Customer Quotes</p>
-                                {quotesArr.map((q, i) => (
-                                    <div key={i} className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex gap-3">
-                                        <span className="text-2xl text-gray-300 font-serif leading-none select-none">"</span>
-                                        <p className="text-sm text-gray-800 italic leading-relaxed flex-1">{q}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Actionable recommendations */}
-                        {recsArr.length > 0 && (
-                            <div className="my-4">
-                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Product Recommendations</p>
-                                <div className="space-y-1.5">
-                                    {recsArr.map((rec, i) => (
-                                        <div key={i} className="flex items-start gap-2">
-                                            <span className="text-indigo-500 font-bold text-sm mt-0.5">→</span>
-                                            <p className="text-sm text-gray-800">{rec}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Conversation links */}
-                        {urls.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                {urls.map((url, i) => (
-                                    <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                                        className="text-xs text-indigo-600 hover:text-indigo-800 underline">
-                                        View conversation {urls.length > 1 ? `#${i + 1}` : ''}
-                                    </a>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                );
-            };
-
-            return (
-                <div className="fade-in">
-                    {/* Metadata banner */}
-                    {metadata.totalConversations && (
-                        <div className="bg-gray-900 text-white rounded-xl p-4 mb-6 flex flex-wrap items-center justify-between gap-4">
-                            <div>
-                                <p className="text-xs uppercase tracking-widest text-gray-400">Analysis Summary</p>
-                                <p className="font-semibold">{metadata.dateRange || 'Date range N/A'}</p>
-                            </div>
-                            <div className="flex gap-6 text-sm">
-                                <div className="text-center"><p className="text-2xl font-bold">{metadata.totalConversations}</p><p className="text-gray-400 text-xs">Total Convos</p></div>
-                                <div className="text-center"><p className="text-2xl font-bold">{metadata.filteredConversations || '-'}</p><p className="text-gray-400 text-xs">Flagged</p></div>
-                                <div className="text-center"><p className="text-2xl font-bold">{topInsights.length}</p><p className="text-gray-400 text-xs">Key Insights</p></div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Top Critical Insights */}
-                    {topInsights.length > 0 && (
-                        <div className="mb-8">
-                            <h3 className="text-xl font-bold text-gray-900 mb-1">Top Critical Insights</h3>
-                            <p className="text-sm text-gray-500 mb-4">Ranked by severity x frequency — these need product attention now</p>
-                            <div>
-                                {topInsights.map((insight, idx) => renderInsightCard(insight, idx, true))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Insights by Product Area (from allInsights) */}
-                    {Object.keys(allInsights).length > 0 && (
-                        <div className="mb-8">
-                            <h3 className="text-xl font-bold text-gray-900 mb-1">All Insights by Product</h3>
-                            <p className="text-sm text-gray-500 mb-4">Complete breakdown organized by Perpay product area</p>
-                            {[
-                                { key: 'card', label: 'Card' },
-                                { key: 'perpayPlus', label: 'Perpay+' },
-                                { key: 'marketplace', label: 'Marketplace' },
-                                { key: 'general', label: 'General / Cross-product' }
-                            ].map(({ key, label }) => {
-                                const items = allInsights[key] || [];
-                                if (items.length === 0) return null;
-                                return (
-                                    <div key={key} className="mb-6">
-                                        <h4 className="text-lg font-bold text-gray-800 mb-3 pb-1 border-b border-gray-200">{label} <span className="text-sm font-normal text-gray-500">({items.length} insight{items.length !== 1 ? 's' : ''})</span></h4>
-                                        {items.map((insight, idx) => renderInsightCard(insight, idx, false))}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-
-                    {/* Publish button */}
-                    <div className="mt-8 pt-6 border-t border-gray-200">
-                        <button
-                            onClick={onPublish}
-                            disabled={isPublishing}
-                            className="w-full px-6 py-3 bg-emerald-500 text-white rounded-lg font-semibold hover:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                            {isPublishing && <div className="spinner"></div>}
-                            {isPublishing ? 'Publishing...' : 'Publish to Confluence'}
-                        </button>
-                    </div>
-                </div>
-            );
-        };
-
-        // Product Summary Tab (replaces full Conversations Tab)
-        const ConversationsTab = ({ conversations }) => {
-            const [expandedArea, setExpandedArea] = useState(null);
-            const [expandedConv, setExpandedConv] = useState(null);
-
-            if (!conversations || conversations.length === 0) {
-                return (
-                    <div className="text-center py-12">
-                        <p className="text-gray-500 text-lg">Upload data to see product area summaries</p>
-                    </div>
-                );
-            }
-
-            const areaConfig = {
-                'Card': { color: 'blue', icon: 'CC', desc: 'Credit card, payments, transactions' },
-                'Perpay+': { color: 'purple', icon: 'P+', desc: 'Subscription, membership, benefits' },
-                'Marketplace': { color: 'green', icon: 'MK', desc: 'Shopping, orders, delivery' },
-                'General': { color: 'gray', icon: 'GN', desc: 'Account, cross-product, other' }
-            };
-
-            const areas = ['Card', 'Perpay+', 'Marketplace', 'General'];
-
-            // Score conversations by actionability (lower = more actionable)
-            const scoreConv = (conv) => {
-                let score = 0;
-                const cxScore = getCXScore(conv);
-                if (cxScore !== null) score += (6 - cxScore) * 3; // Low CX = high priority
-                if (isFlagged(conv)) score += 5;
-                if (conv.Undeflected === 'True') score += 4;
-                const summary = (conv.Summary || '').toLowerCase();
-                const actionWords = ['frustrated', 'cancel', 'close account', 'refund', 'not working', 'broken', 'disappointed', 'angry', 'worst', 'scam', 'stolen', 'unauthorized', 'never received', 'still waiting', 'ridiculous', 'unacceptable', 'misleading', 'confused'];
-                actionWords.forEach(w => { if (summary.includes(w)) score += 2; });
-                return score;
-            };
-
-            // Group and rank
-            const grouped = {};
-            areas.forEach(area => {
-                const areaConvs = conversations.filter(c => deriveProductArea(c.Tags) === area);
-                const flaggedCount = areaConvs.filter(c => isFlagged(c)).length;
-                const escalatedCount = areaConvs.filter(c => c.Undeflected === 'True').length;
-                const cxScores = areaConvs.map(c => getCXScore(c)).filter(s => s !== null);
-                const avgCx = cxScores.length > 0 ? (cxScores.reduce((a, b) => a + b, 0) / cxScores.length).toFixed(1) : null;
-                const topConvs = [...areaConvs].sort((a, b) => scoreConv(b) - scoreConv(a)).slice(0, 5);
-
-                grouped[area] = { total: areaConvs.length, flaggedCount, escalatedCount, avgCx, topConvs };
+                },
+                error: (err) => alert('Error parsing CSV: ' + err.message)
             });
+        };
 
-            const colorMap = {
-                blue: { bg: 'bg-blue-50', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-800', header: 'text-blue-900', accent: 'bg-blue-600' },
-                purple: { bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-800', header: 'text-purple-900', accent: 'bg-purple-600' },
-                green: { bg: 'bg-green-50', border: 'border-green-200', badge: 'bg-green-100 text-green-800', header: 'text-green-900', accent: 'bg-green-600' },
-                gray: { bg: 'bg-gray-50', border: 'border-gray-200', badge: 'bg-gray-100 text-gray-800', header: 'text-gray-900', accent: 'bg-gray-600' }
-            };
+        const calcStats = (data) => {
+            let escalatedCount = 0;
+            let cxScores = [];
+            let dates = [];
+            const channelCounts = {};
+            data.forEach(row => {
+                if (row.Undeflected === 'True') escalatedCount++;
+                const s = getCXScore(row);
+                if (s !== null) cxScores.push(parseFloat(s));
+                if (row['Created At']) { try { dates.push(new Date(row['Created At'])); } catch {} }
+                const ch = row['metadata._decagon_channel'] || 'Unknown';
+                channelCounts[ch] = (channelCounts[ch] || 0) + 1;
+            });
+            const avgCXScore = cxScores.length > 0 ? (cxScores.reduce((a,b)=>a+b,0)/cxScores.length).toFixed(2) : 'N/A';
+            const validDates = dates.filter(d => !isNaN(d));
+            const dateRange = validDates.length > 0 ? {
+                min: new Date(Math.min(...validDates)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                max: new Date(Math.max(...validDates)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            } : null;
+            return { totalConversations: data.length, escalatedCount, avgCXScore, channelCounts, dateRange };
+        };
 
+        const KEYWORDS = ['frustrated','close account','cancel','refund','not working','broken','disappointed',
+            'angry','worst','scam','stolen','unauthorized','never received','still waiting',
+            'ridiculous','unacceptable','misleading','confused'];
+
+        const handleAnalyze = async () => {
+            onAnalyzing(true);
+            try {
+                const trunc = (s, max) => s && s.length > max ? s.substring(0, max) : s;
+                const scored = conversations.map(c => {
+                    let score = 0;
+                    if (c['Undeflected'] === 'True') score += 10;
+                    const sum = (c['Summary'] || '').toLowerCase();
+                    KEYWORDS.forEach(kw => { if (sum.includes(kw)) score += 3; });
+                    if (c['Customer Feedback'] && c['Customer Feedback'].trim().length > 10) score += 5;
+                    try {
+                        const flags = JSON.parse(c['Watchtower Flags'] || '[]');
+                        if (Array.isArray(flags) && flags.length > 0) {
+                            if (flags.find(f => (f.flagType || f.job_name) === 'CX by Intent' && (f.score || f.rubric_score) <= 3)) score += 8;
+                            if (flags.find(f => ((f.flagType || f.job_name) + '').includes('Complaint') && f.flagged === true)) score += 6;
+                        }
+                    } catch(e) {}
+                    return { conv: c, score };
+                });
+                const actionable = scored.filter(({ score }) => score > 0);
+                if (actionable.length === 0) { alert('No actionable conversations found in this CSV.'); onAnalyzing(false); return; }
+                const top = actionable.sort((a, b) => b.score - a.score).slice(0, 300);
+                const convPayload = top.map(({ conv: c }) => ({
+                    summary: trunc(c['Summary'] || '', 300),
+                    tags: c['Tags'] || '',
+                    customerFeedback: trunc(c['Customer Feedback'] || '', 150),
+                    undeflected: c['Undeflected'] || '',
+                    conversationUrl: c['Conversation URL'] || '',
+                    createdAt: c['Created At'] || '',
+                }));
+
+                const resp = await fetch('/.netlify/functions/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        conversations: convPayload,
+                        totalConversations: stats.totalConversations,
+                        undeflectedCount: stats.escalatedCount,
+                        dateRange: stats.dateRange ? { start: stats.dateRange.min, end: stats.dateRange.max } : {}
+                    })
+                });
+                if (!resp.ok) {
+                    const t = await resp.text();
+                    let msg; try { msg = JSON.parse(t).error || t; } catch { msg = t; }
+                    throw new Error(msg);
+                }
+                const data = await resp.json();
+                onInsightsGenerated(data, stats);
+            } catch (err) {
+                alert('Analysis failed: ' + err.message);
+            } finally {
+                onAnalyzing(false);
+            }
+        };
+
+        return (
+            <div className="fade-in">
+                <div
+                    className={`drag-drop-zone border-2 border-dashed rounded-xl p-12 text-center cursor-pointer hover:border-indigo-400 ${dragOver ? 'drag-over' : 'border-gray-300'}`}
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) parseCSV(f); else alert('Please drop a CSV file'); }}
+                    onClick={() => fileInputRef.current?.click()}
+                >
+                    <div className="text-4xl mb-4">ð</div>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Upload Decagon CSV</h3>
+                    <p className="text-gray-600 mb-4">Drag and drop your CSV file here, or click to browse</p>
+                    <input ref={fileInputRef} type="file" accept=".csv" onChange={(e) => { if (e.target.files[0]) parseCSV(e.target.files[0]); }} className="hidden" />
+                    <button className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Select File</button>
+                </div>
+
+                {stats && (
+                    <div className="mt-8 fade-in">
+                        <h3 className="text-xl font-bold text-gray-900 mb-4">Upload Summary</h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div className="bg-white p-6 rounded-xl shadow-sm">
+                                <p className="text-gray-500 text-sm font-medium mb-1">Total Conversations</p>
+                                <p className="text-3xl font-bold text-indigo-600">{stats.totalConversations.toLocaleString()}</p>
+                            </div>
+                            <div className="bg-white p-6 rounded-xl shadow-sm">
+                                <p className="text-gray-500 text-sm font-medium mb-1">Undeflected</p>
+                                <p className="text-3xl font-bold text-red-500">{stats.escalatedCount.toLocaleString()}</p>
+                                <p className="text-xs text-gray-400">{stats.totalConversations > 0 ? Math.round(stats.escalatedCount/stats.totalConversations*100) : 0}% needed human</p>
+                            </div>
+                            <div className="bg-white p-6 rounded-xl shadow-sm">
+                                <p className="text-gray-500 text-sm font-medium mb-1">Avg CX Score</p>
+                                <p className="text-3xl font-bold text-emerald-500">{stats.avgCXScore}</p>
+                            </div>
+                            <div className="bg-white p-6 rounded-xl shadow-sm">
+                                <p className="text-gray-500 text-sm font-medium mb-1">Date Range</p>
+                                <p className="text-sm font-semibold text-gray-900">{stats.dateRange ? `${stats.dateRange.min} â ${stats.dateRange.max}` : 'N/A'}</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleAnalyze}
+                            disabled={isAnalyzing}
+                            className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                            {isAnalyzing && <div className="spinner"></div>}
+                            {isAnalyzing ? 'Analyzing conversations...' : 'Analyze & Generate Report'}
+                        </button>
+                    </div>
+                )}
+
+                {!stats && (
+                    <div className="mt-12 text-center text-gray-500">
+                        <p className="text-lg">ð Start by uploading a Decagon CSV file</p>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // âââ Insights Report Tab ââââââââââââââââââââââââââââââââââââââââââââââââââ
+    const InsightsReportTab = ({ insightsData, csvStats, onPublish, isPublishing }) => {
+        if (!insightsData) {
             return (
-                <div className="fade-in space-y-6">
-                    {/* Overview stats row */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {areas.map(area => {
-                            const data = grouped[area];
-                            const cfg = areaConfig[area];
-                            const colors = colorMap[cfg.color];
+                <div className="text-center py-16">
+                    <p className="text-gray-400 text-lg">Upload and analyze a CSV to see the weekly insights report</p>
+                </div>
+            );
+        }
+
+        const { executiveSummary = {}, themes = [] } = insightsData;
+        const topIssues = executiveSummary.topIssues || [];
+        const narrative = executiveSummary.narrative || '';
+
+        const renderNarrative = (text) => {
+            const parts = text.split(/\*\*(.*?)\*\*/g);
+            return parts.map((p, i) => i % 2 === 1 ? <strong key={i}>{p}</strong> : p);
+        };
+
+        const total = csvStats?.totalConversations || 0;
+        const undeflectedCount = csvStats?.escalatedCount || 0;
+        const undeflectedPct = total > 0 ? Math.round((undeflectedCount / total) * 100) : 0;
+        const dateRange = csvStats?.dateRange ? `${csvStats.dateRange.min} â ${csvStats.dateRange.max}` : 'N/A';
+        const avgCX = csvStats?.avgCXScore || 'â';
+
+        const areaTagStyle = {
+            'Card':        'bg-blue-100 text-blue-800',
+            'Perpay+':     'bg-purple-100 text-purple-800',
+            'Marketplace': 'bg-green-100 text-green-800',
+            'Core':        'bg-slate-100 text-slate-700',
+            'General':     'bg-slate-100 text-slate-700',
+        };
+
+        const severityBorderStyle = {
+            'Critical': 'border-red-500',
+            'High':     'border-orange-400',
+            'Medium':   'border-amber-300',
+            'Low':      'border-green-400',
+        };
+
+        return (
+            <div className="fade-in">
+
+                {/* ââ Stats Bar ââ */}
+                <div className="grid grid-cols-2 md:grid-cols-5 border border-gray-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
+                    <div className="p-5 border-r border-gray-100">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Reporting Week</p>
+                        <p className="text-sm font-bold text-gray-900 leading-tight">{dateRange}</p>
+                    </div>
+                    <div className="p-5 border-r border-gray-100">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Conversations</p>
+                        <p className="text-2xl font-bold text-gray-900">{total.toLocaleString()}</p>
+                        <p className="text-xs text-gray-400">total analyzed</p>
+                    </div>
+                    <div className="p-5 border-r border-gray-100">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Undeflected</p>
+                        <p className="text-2xl font-bold text-red-500">{undeflectedPct}%</p>
+                        <p className="text-xs text-gray-400">{undeflectedCount.toLocaleString()} needed human</p>
+                    </div>
+                    <div className="p-5 border-r border-gray-100">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Retention Risk</p>
+                        <p className="text-2xl font-bold text-gray-300">â</p>
+                        <p className="text-xs text-gray-400">not tracked</p>
+                    </div>
+                    <div className="p-5">
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">CSAT</p>
+                        <p className="text-2xl font-bold text-gray-900">{avgCX} <span className="text-yellow-400 text-lg">â</span></p>
+                        <p className="text-xs text-gray-400">avg CX score</p>
+                    </div>
+                </div>
+
+                {/* ââ Product Head Read Card ââ */}
+                <div className="rounded-xl p-7 mb-8" style={{background: '#1a3354'}}>
+                    <p className="text-xs font-bold tracking-widest uppercase mb-4" style={{color: '#64748b'}}>
+                        ð &nbsp;Product Head Read
+                    </p>
+                    <h2 className="text-2xl font-bold text-white mb-1">{dateRange}</h2>
+                    <p className="text-sm mb-6" style={{color: '#7ea0c0'}}>
+                        {total.toLocaleString()} conversations &nbsp;Â·&nbsp; {undeflectedPct}% undeflected &nbsp;Â·&nbsp; {themes.length} friction themes detected
+                    </p>
+
+                    {topIssues.length > 0 && (
+                        <>
+                            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{color: '#fbbf24'}}>
+                                â¡ &nbsp;Top {topIssues.length} Priority Issues This Week
+                            </p>
+                            <ol className="space-y-3 mb-6">
+                                {topIssues.map((issue, i) => (
+                                    <li key={i} className="flex gap-3 text-sm" style={{color: '#e2e8f0'}}>
+                                        <span className="flex-shrink-0 font-bold w-4" style={{color: '#64748b'}}>{i + 1}</span>
+                                        <span>
+                                            <strong className="text-white">{issue.title} ({issue.pct}%, {(issue.convos || 0).toLocaleString()} convos)</strong>
+                                            {' '}â {issue.description}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ol>
+                        </>
+                    )}
+
+                    {narrative && (
+                        <p className="text-sm leading-relaxed" style={{color: '#94a3b8'}}>
+                            {renderNarrative(narrative)}
+                        </p>
+                    )}
+                </div>
+
+                {/* ââ Friction Themes ââ */}
+                <div className="mb-8">
+                    <div className="flex items-center gap-2 mb-5">
+                        <span className="text-yellow-500 text-lg">â¡</span>
+                        <h3 className="text-lg font-bold text-gray-900">Friction Themes</h3>
+                        <span className="text-sm text-gray-400">â {themes.length} patterns Â· sorted by severity then volume</span>
+                    </div>
+
+                    <div className="space-y-5">
+                        {themes.map((theme, idx) => {
+                            const area = theme.productArea || theme.product_area || 'General';
+                            const borderClass = severityBorderStyle[theme.severity] || 'border-gray-200';
+                            const tagClass = areaTagStyle[area] || areaTagStyle['General'];
+                            const signals = Array.isArray(theme.customerSignals) ? theme.customerSignals : [];
+                            const recs = Array.isArray(theme.recommendations) ? theme.recommendations : [];
+                            const highVolume = (theme.volumePct || 0) >= 10;
+
                             return (
-                                <div key={area}
-                                    className={`${colors.bg} border ${colors.border} rounded-xl p-4 cursor-pointer hover:shadow-md transition`}
-                                    onClick={() => setExpandedArea(expandedArea === area ? null : area)}
-                                >
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className={`${colors.accent} text-white text-xs font-bold px-2 py-1 rounded`}>{cfg.icon}</span>
-                                        <span className={`font-semibold ${colors.header}`}>{area}</span>
-                                    </div>
-                                    <p className="text-2xl font-bold text-gray-900">{data.total}</p>
-                                    <p className="text-xs text-gray-500">conversations</p>
-                                    <div className="flex gap-3 mt-2 text-xs">
-                                        {data.flaggedCount > 0 && (
-                                            <span className="text-red-600 font-semibold">{data.flaggedCount} flagged</span>
+                                <div key={idx} className={`border-l-4 ${borderClass} bg-white rounded-r-xl shadow-sm`}>
+                                    <div className="p-6">
+                                        {/* Area tag + volume */}
+                                        <div className="flex items-start justify-between mb-3">
+                                            <span className={`text-xs font-bold px-2.5 py-1 rounded uppercase tracking-wide ${tagClass}`}>
+                                                {area}
+                                            </span>
+                                            <div className="text-right">
+                                                <p className={`text-sm font-bold ${highVolume ? 'text-red-600' : 'text-gray-700'}`}>
+                                                    {(theme.conversationCount || 0).toLocaleString()} convos Â· {theme.volumePct || 0}%
+                                                </p>
+                                                <p className="text-xs text-gray-400">of week's volume</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Title */}
+                                        <h4 className="text-xl font-bold text-gray-900 mb-4">{theme.theme}</h4>
+
+                                        {/* Summary */}
+                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Summary</p>
+                                        <p className="text-sm text-gray-700 leading-relaxed mb-5">{theme.summary}</p>
+
+                                        {/* Customer Signals */}
+                                        {signals.length > 0 && (
+                                            <div className="mb-5">
+                                                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Customer Signals</p>
+                                                <div className="space-y-2">
+                                                    {signals.map((sig, i) => (
+                                                        <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-700 italic leading-relaxed">
+                                                            "{sig}"
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         )}
-                                        {data.escalatedCount > 0 && (
-                                            <span className="text-amber-600 font-semibold">{data.escalatedCount} escalated</span>
+
+                                        {/* Recommendations */}
+                                        {recs.length > 0 && (
+                                            <div>
+                                                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Recommendations</p>
+                                                <div className="space-y-1.5">
+                                                    {recs.map((rec, i) => (
+                                                        <div key={i} className="flex items-start gap-2">
+                                                            <span className="text-indigo-500 font-bold text-sm mt-0.5 flex-shrink-0">â</span>
+                                                            <p className="text-sm text-gray-800">{rec}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
-                                    {data.avgCx && (
-                                        <p className="text-xs text-gray-500 mt-1">Avg CX: <span className={`font-semibold ${parseFloat(data.avgCx) <= 3 ? 'text-red-600' : 'text-green-600'}`}>{data.avgCx}/5</span></p>
-                                    )}
                                 </div>
                             );
                         })}
                     </div>
+                </div>
 
-                    {/* Expanded product area detail */}
+                {/* Publish button */}
+                <div className="mt-8 pt-6 border-t border-gray-200">
+                    <button
+                        onClick={onPublish}
+                        disabled={isPublishing}
+                        className="w-full px-6 py-3 bg-emerald-500 text-white rounded-lg font-semibold hover:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {isPublishing && <div className="spinner"></div>}
+                        {isPublishing ? 'Publishing...' : 'ð Publish to Confluence'}
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+    // âââ By Product Area Tab ââââââââââââââââââââââââââââââââââââââââââââââââââ
+    const ConversationsTab = ({ conversations }) => {
+        const [expandedArea, setExpandedArea] = useState(null);
+        const [expandedConv, setExpandedConv] = useState(null);
+
+        if (!conversations || conversations.length === 0) {
+            return <div className="text-center py-12"><p className="text-gray-400 text-lg">Upload data to see product area breakdowns</p></div>;
+        }
+
+        const areaConfig = {
+            'Card':       { color: 'blue',   icon: 'CC', desc: 'Credit card, payments, transactions' },
+            'Perpay+':    { color: 'purple', icon: 'P+', desc: 'Subscription, membership, benefits' },
+            'Marketplace':{ color: 'green',  icon: 'MK', desc: 'Shopping, orders, delivery' },
+            'General':    { color: 'gray',   icon: 'GN', desc: 'Account, cross-product, other' }
+        };
+        const areas = ['Card', 'Perpay+', 'Marketplace', 'General'];
+
+        const scoreConv = (conv) => {
+            let score = 0;
+            const cx = getCXScore(conv);
+            if (cx !== null) score += (6 - cx) * 3;
+            if (isFlagged(conv)) score += 5;
+            if (conv.Undeflected === 'True') score += 4;
+            ['frustrated','cancel','close account','refund','not working','broken','disappointed','angry'].forEach(w => {
+                if ((conv.Summary || '').toLowerCase().includes(w)) score += 2;
+            });
+            return score;
+        };
+
+        const grouped = {};
+        areas.forEach(area => {
+            const ac = conversations.filter(c => deriveProductArea(c.Tags) === area);
+            grouped[area] = {
+                total: ac.length,
+                flaggedCount: ac.filter(c => isFlagged(c)).length,
+                escalatedCount: ac.filter(c => c.Undeflected === 'True').length,
+                topConvs: [...ac].sort((a, b) => scoreConv(b) - scoreConv(a)).slice(0, 5)
+            };
+        });
+
+        const colorMap = {
+            blue:   { bg: 'bg-blue-50',   border: 'border-blue-200',   badge: 'bg-blue-600',   header: 'text-blue-900' },
+            purple: { bg: 'bg-purple-50', border: 'border-purple-200', badge: 'bg-purple-600', header: 'text-purple-900' },
+            green:  { bg: 'bg-green-50',  border: 'border-green-200',  badge: 'bg-green-600',  header: 'text-green-900' },
+            gray:   { bg: 'bg-gray-50',   border: 'border-gray-200',   badge: 'bg-gray-600',   header: 'text-gray-900' }
+        };
+
+        return (
+            <div className="fade-in space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {areas.map(area => {
-                        if (expandedArea !== area) return null;
                         const data = grouped[area];
                         const cfg = areaConfig[area];
                         const colors = colorMap[cfg.color];
-
                         return (
-                            <div key={area} className={`${colors.bg} border ${colors.border} rounded-xl p-6 fade-in`}>
-                                <div className="flex items-center justify-between mb-4">
-                                    <div>
-                                        <h3 className={`text-lg font-bold ${colors.header}`}>{area} — Top Actionable Conversations</h3>
-                                        <p className="text-sm text-gray-500">{cfg.desc} | {data.total} total, {data.flaggedCount} flagged, {data.escalatedCount} escalated</p>
-                                    </div>
-                                    <button onClick={() => setExpandedArea(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">x</button>
+                            <div key={area}
+                                className={`${colors.bg} border ${colors.border} rounded-xl p-4 cursor-pointer hover:shadow-md transition`}
+                                onClick={() => setExpandedArea(expandedArea === area ? null : area)}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className={`${colors.badge} text-white text-xs font-bold px-2 py-1 rounded`}>{cfg.icon}</span>
+                                    <span className={`font-semibold ${colors.header}`}>{area}</span>
                                 </div>
-
-                                {data.topConvs.length === 0 ? (
-                                    <p className="text-gray-500 text-sm">No conversations in this product area.</p>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {data.topConvs.map((conv, idx) => {
-                                            const convKey = `${area}-${idx}`;
-                                            const isExpanded = expandedConv === convKey;
-                                            const cxScore = getCXScore(conv);
-                                            return (
-                                                <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                                                    <div
-                                                        className="p-4 cursor-pointer hover:bg-gray-50 transition"
-                                                        onClick={() => setExpandedConv(isExpanded ? null : convKey)}
-                                                    >
-                                                        <div className="flex items-start justify-between gap-4">
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-sm font-medium text-gray-900 mb-1">{conv.Summary || 'No summary available'}</p>
-                                                                <div className="flex flex-wrap gap-2 items-center">
-                                                                    <span className="text-xs text-gray-500">{formatDate(conv['Created At'])}</span>
-                                                                    <span className="text-xs text-gray-400">|</span>
-                                                                    <span className="text-xs text-gray-500">{conv['metadata._decagon_channel'] || 'Unknown'}</span>
-                                                                    {cxScore !== null && (
-                                                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${cxScore <= 2 ? 'bg-red-100 text-red-700' : cxScore <= 3 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                                                                            CX: {cxScore}/5
-                                                                        </span>
-                                                                    )}
-                                                                    {isFlagged(conv) && (
-                                                                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-red-100 text-red-700">Needs Review</span>
-                                                                    )}
-                                                                    {conv.Undeflected === 'True' && (
-                                                                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-700">Escalated</span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <span className="text-gray-400 text-sm mt-1">{isExpanded ? '▲' : '▼'}</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {isExpanded && (
-                                                        <div className="border-t border-gray-100 p-4 bg-gray-50 space-y-3">
-                                                            {conv.Resolution && (
-                                                                <div>
-                                                                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Resolution</p>
-                                                                    <p className="text-sm text-gray-700">{conv.Resolution}</p>
-                                                                </div>
-                                                            )}
-                                                            {conv['Customer Feedback'] && (
-                                                                <div>
-                                                                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Customer Feedback</p>
-                                                                    <p className="text-sm text-gray-700">{conv['Customer Feedback']}</p>
-                                                                </div>
-                                                            )}
-                                                            {conv['Conversation URL'] && (
-                                                                <a href={conv['Conversation URL']} target="_blank" rel="noopener noreferrer"
-                                                                    className="inline-block text-sm text-indigo-600 hover:text-indigo-800 font-medium">
-                                                                    View full conversation in Decagon →
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                <p className="text-2xl font-bold text-gray-900">{data.total.toLocaleString()}</p>
+                                <p className="text-xs text-gray-400">conversations</p>
+                                <div className="flex gap-3 mt-2 text-xs">
+                                    {data.flaggedCount > 0 && <span className="text-red-600 font-semibold">{data.flaggedCount} flagged</span>}
+                                    {data.escalatedCount > 0 && <span className="text-amber-600 font-semibold">{data.escalatedCount} escalated</span>}
+                                </div>
                             </div>
                         );
                     })}
-
-                    <p className="text-sm text-gray-500 text-center">Showing top 5 most actionable conversations per product area from {conversations.length} total</p>
                 </div>
-            );
-        };
 
-        // Confluence Sync Tab
-        const ConfluenceSyncTab = ({ insightsData, onPublish, isPublishing }) => {
-            const [pageId, setPageId] = useState('4451237894');
-            const [lastPublished, setLastPublished] = useState(null);
-            const [publishStatus, setPublishStatus] = useState(null);
-
-            const generateMarkdown = () => {
-                if (!insightsData) return '';
-
-                let md = '# Weekly Product Decagon Insights\n\n';
-                md += `*Generated: ${new Date().toLocaleString()}*\n\n`;
-
-                const insights = insightsData.insights || [];
-
-                md += '## Top Critical Insights\n\n';
-                insights.slice(0, 5).forEach((insight, idx) => {
-                    md += `${idx + 1}. **${insight.theme}**\n`;
-                    md += `   - ${insight.summary}\n\n`;
-                });
-
-                md += '## Insights by Product Area\n\n';
-                const areas = ['Card', 'Perpay+', 'Marketplace', 'General'];
-                areas.forEach(area => {
-                    const areaInsights = insights.filter(i => i.product_area === area);
-                    if (areaInsights.length > 0) {
-                        md += `### ${area}\n\n`;
-                        areaInsights.forEach(insight => {
-                            md += `**${insight.theme}** (${insight.frequency})\n`;
-                            md += `${insight.summary}\n\n`;
-                        });
-                    }
-                });
-
-                return md;
-            };
-
-            const handlePublish = async () => {
-                setPublishStatus('publishing');
-                try {
-                    const resp = await fetch('/.netlify/functions/publish-confluence', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            pageId: pageId,
-                            insights: insightsData
-                        })
-                    });
-                    if (!resp.ok) throw new Error(await resp.text());
-                    const data = await resp.json();
-                    setLastPublished(new Date(data.publishedAt));
-                    setPublishStatus('success');
-                    setTimeout(() => setPublishStatus(null), 5000);
-                } catch (err) {
-                    setPublishStatus('error');
-                    alert('Publish failed: ' + err.message);
-                    setTimeout(() => setPublishStatus(null), 3000);
-                }
-            };
-
-            return (
-                <div className="fade-in">
-                    {!insightsData && (
-                        <div className="text-center py-12 bg-white rounded-xl shadow-sm">
-                            <p className="text-gray-500 text-lg">📄 Generate insights first to publish</p>
-                        </div>
-                    )}
-
-                    {insightsData && (
-                        <div className="space-y-6">
-                            <div className="bg-white p-6 rounded-xl shadow-sm">
-                                <h3 className="text-xl font-bold text-gray-900 mb-4">Confluence Connection</h3>
-
-                                <div className="mb-4">
-                                    <p className="text-sm text-gray-600 mb-2">Page ID</p>
-                                    <input
-                                        type="text"
-                                        value={pageId}
-                                        onChange={(e) => setPageId(e.target.value)}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                </div>
-
-                                <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-                                    <p className="text-sm text-emerald-800 font-medium">✓ Connected to Confluence</p>
-                                </div>
-
-                                {lastPublished && (
-                                    <p className="text-sm text-gray-600 mb-4">
-                                        Last published: {lastPublished.toLocaleString()}
-                                    </p>
-                                )}
-
-                                {publishStatus === 'success' && (
-                                    <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-                                        <p className="text-sm text-emerald-800">✓ Successfully published to Confluence!</p>
-                                    </div>
-                                )}
-
-                                {publishStatus === 'publishing' && (
-                                    <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
-                                        <div className="spinner"></div>
-                                        <p className="text-sm text-blue-800">Publishing...</p>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="bg-white p-6 rounded-xl shadow-sm">
-                                <h3 className="text-xl font-bold text-gray-900 mb-4">Preview</h3>
-                                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm text-gray-700 font-mono whitespace-pre-wrap overflow-auto max-h-80">
-                                    {generateMarkdown()}
-                                </div>
-                            </div>
-
-                            <button
-                                onClick={handlePublish}
-                                disabled={isPublishing || publishStatus === 'publishing'}
-                                className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                                {(isPublishing || publishStatus === 'publishing') && <div className="spinner"></div>}
-                                {(isPublishing || publishStatus === 'publishing') ? 'Publishing...' : '🚀 Publish to Confluence'}
-                            </button>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-        // Main App Component
-        const App = () => {
-            const [activeTab, setActiveTab] = useState('upload');
-            const [csvData, setCsvData] = useState(null);
-            const [insightsData, setInsightsData] = useState(null);
-            const [isAnalyzing, setIsAnalyzing] = useState(false);
-            const [isPublishing, setIsPublishing] = useState(false);
-
-            const handleDataLoaded = (data) => {
-                setCsvData(data);
-            };
-
-            const handleAnalyzing = (analyzing) => {
-                setIsAnalyzing(analyzing);
-            };
-
-            const handleInsightsGenerated = (data) => {
-                setInsightsData(data);
-                setIsAnalyzing(false);
-                setActiveTab('insights');
-            };
-
-            const handlePublish = () => {
-                setActiveTab('confluence');
-            };
-
-            return (
-                <div className="min-h-screen bg-gray-50">
-                    {/* Header */}
-                    <header className="bg-white shadow-sm sticky top-0 z-50">
-                        <div className="max-w-7xl mx-auto px-6 py-6">
-                            <div className="flex items-center gap-3 mb-2">
-                                <span className="text-3xl">📊</span>
+                {areas.map(area => {
+                    if (expandedArea !== area) return null;
+                    const data = grouped[area];
+                    const cfg = areaConfig[area];
+                    const colors = colorMap[cfg.color];
+                    return (
+                        <div key={area} className={`${colors.bg} border ${colors.border} rounded-xl p-6 fade-in`}>
+                            <div className="flex items-center justify-between mb-4">
                                 <div>
-                                    <h1 className="text-3xl font-bold text-gray-900">Perpay — Weekly Product Decagon Insights</h1>
-                                    <p className="text-gray-600 mt-1">Upload Decagon CSV → Auto-analyze → Publish to Confluence</p>
+                                    <h3 className={`text-lg font-bold ${colors.header}`}>{area} â Top Actionable Conversations</h3>
+                                    <p className="text-sm text-gray-500">{cfg.desc} Â· {data.total} total, {data.flaggedCount} flagged, {data.escalatedCount} escalated</p>
                                 </div>
+                                <button onClick={() => setExpandedArea(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">Ã</button>
+                            </div>
+                            <div className="space-y-3">
+                                {data.topConvs.map((conv, idx) => {
+                                    const key = `${area}-${idx}`;
+                                    const expanded = expandedConv === key;
+                                    return (
+                                        <div key={idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                            <div className="p-4 cursor-pointer hover:bg-gray-50 transition" onClick={() => setExpandedConv(expanded ? null : key)}>
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div className="flex-1">
+                                                        <p className="text-sm font-medium text-gray-900 mb-1">{conv.Summary || 'No summary'}</p>
+                                                        <div className="flex flex-wrap gap-2 text-xs">
+                                                            <span className="text-gray-400">{formatDate(conv['Created At'])}</span>
+                                                            {conv.Undeflected === 'True' && <span className="bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded">Escalated</span>}
+                                                            {isFlagged(conv) && <span className="bg-red-100 text-red-700 font-semibold px-2 py-0.5 rounded">Needs Review</span>}
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-gray-400 text-xs mt-1">{expanded ? 'â²' : 'â¼'}</span>
+                                                </div>
+                                            </div>
+                                            {expanded && (
+                                                <div className="border-t border-gray-100 p-4 bg-gray-50 space-y-3">
+                                                    {conv.Resolution && <div><p className="text-xs font-semibold text-gray-400 uppercase mb-1">Resolution</p><p className="text-sm text-gray-700">{conv.Resolution}</p></div>}
+                                                    {conv['Customer Feedback'] && <div><p className="text-xs font-semibold text-gray-400 uppercase mb-1">Customer Feedback</p><p className="text-sm text-gray-700">{conv['Customer Feedback']}</p></div>}
+                                                    {conv['Conversation URL'] && <a href={conv['Conversation URL']} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">View in Decagon â</a>}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
-                    </header>
+                    );
+                })}
+            </div>
+        );
+    };
 
-                    {/* Main Content */}
-                    <main className="max-w-7xl mx-auto px-6 py-8">
-                        {/* Tabs */}
-                        <div className="flex gap-0 border-b border-gray-200 mb-8 bg-white rounded-t-xl">
-                            <button
-                                onClick={() => setActiveTab('upload')}
-                                className={`tab-button ${activeTab === 'upload' ? 'active' : ''}`}
-                            >
-                                📁 Upload
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('insights')}
-                                className={`tab-button ${activeTab === 'insights' ? 'active' : ''}`}
-                                disabled={!insightsData}
-                            >
-                                🔍 Insights Report
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('conversations')}
-                                className={`tab-button ${activeTab === 'conversations' ? 'active' : ''}`}
-                                disabled={!csvData}
-                            >
-                                📋 By Product Area
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('confluence')}
-                                className={`tab-button ${activeTab === 'confluence' ? 'active' : ''}`}
-                            >
-                                📰 Confluence Sync
-                            </button>
-                        </div>
+    // âââ Confluence Sync Tab ââââââââââââââââââââââââââââââââââââââââââââââââââ
+    const ConfluenceSyncTab = ({ insightsData }) => {
+        const [pageId, setPageId] = useState('4451237894');
+        const [publishStatus, setPublishStatus] = useState(null);
+        const [lastPublished, setLastPublished] = useState(null);
 
-                        {/* Tab Content */}
-                        <div className="bg-white rounded-b-xl p-8 min-h-96">
-                            {activeTab === 'upload' && (
-                                <UploadTab
-                                    onDataLoaded={handleDataLoaded}
-                                    onAnalyzing={handleAnalyzing}
-                                    isAnalyzing={isAnalyzing}
-                                    conversations={csvData}
-                                    onInsightsGenerated={handleInsightsGenerated}
-                                />
-                            )}
-                            {activeTab === 'insights' && (
-                                <InsightsReportTab
-                                    insightsData={insightsData}
-                                    onPublish={handlePublish}
-                                    isPublishing={isPublishing}
-                                />
-                            )}
-                            {activeTab === 'conversations' && (
-                                <ConversationsTab conversations={csvData} />
-                            )}
-                            {activeTab === 'confluence' && (
-                                <ConfluenceSyncTab
-                                    insightsData={insightsData}
-                                    onPublish={handlePublish}
-                                    isPublishing={isPublishing}
-                                />
-                            )}
-                        </div>
-                    </main>
-
-                    {/* Footer */}
-                    <footer className="bg-white border-t border-gray-200 mt-12">
-                        <div className="max-w-7xl mx-auto px-6 py-6 text-center text-sm text-gray-600">
-                            <p>Perpay — Weekly Product Decagon Insights Tool</p>
-                        </div>
-                    </footer>
-                </div>
-            );
+        const handlePublish = async () => {
+            setPublishStatus('publishing');
+            try {
+                const resp = await fetch('/.netlify/functions/publish-confluence', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pageId, insights: insightsData })
+                });
+                if (!resp.ok) throw new Error(await resp.text());
+                setLastPublished(new Date());
+                setPublishStatus('success');
+                setTimeout(() => setPublishStatus(null), 5000);
+            } catch (err) {
+                setPublishStatus('error');
+                alert('Publish failed: ' + err.message);
+                setTimeout(() => setPublishStatus(null), 3000);
+            }
         };
 
-        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-    </script>
+        return (
+            <div className="fade-in">
+                {!insightsData ? (
+                    <div className="text-center py-12 bg-white rounded-xl shadow-sm">
+                        <p className="text-gray-400 text-lg">ð Generate insights first to publish</p>
+                    </div>
+                ) : (
+                    <div className="space-y-6">
+                        <div className="bg-white p-6 rounded-xl shadow-sm">
+                            <h3 className="text-xl font-bold text-gray-900 mb-4">Confluence Connection</h3>
+                            <div className="mb-4">
+                                <p className="text-sm text-gray-600 mb-2">Page ID</p>
+                                <input type="text" value={pageId} onChange={(e) => setPageId(e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                            </div>
+                            <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                                <p className="text-sm text-emerald-800 font-medium">â Connected to perpay.atlassian.net</p>
+                            </div>
+                            {lastPublished && <p className="text-sm text-gray-500 mb-4">Last published: {lastPublished.toLocaleString()}</p>}
+                            {publishStatus === 'success' && <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg"><p className="text-sm text-emerald-800 font-medium">â Successfully published to Confluence!</p></div>}
+                            {publishStatus === 'publishing' && <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2"><div className="spinner"></div><p className="text-sm text-blue-800">Publishing...</p></div>}
+                        </div>
+
+                        <div className="bg-white p-6 rounded-xl shadow-sm">
+                            <h3 className="text-xl font-bold text-gray-900 mb-4">Themes Preview</h3>
+                            <div className="space-y-2">
+                                {(insightsData.themes || []).map((t, i) => (
+                                    <div key={i} className="flex items-start gap-2 text-sm py-2 border-b border-gray-100 last:border-0">
+                                        <span className="font-bold text-gray-300 w-5 flex-shrink-0">{i+1}.</span>
+                                        <div>
+                                            <strong className="text-gray-900">{t.theme}</strong>
+                                            <span className="text-gray-500"> â {(t.summary || '').substring(0, 100)}{(t.summary || '').length > 100 ? '...' : ''}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={handlePublish}
+                            disabled={publishStatus === 'publishing'}
+                            className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                            {publishStatus === 'publishing' && <div className="spinner"></div>}
+                            {publishStatus === 'publishing' ? 'Publishing...' : 'ð Publish to Confluence'}
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // âââ App ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    const App = () => {
+        const [activeTab, setActiveTab] = useState('upload');
+        const [csvData, setCsvData] = useState(null);
+        const [csvStats, setCsvStats] = useState(null);
+        const [insightsData, setInsightsData] = useState(null);
+        const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+        const handleInsightsGenerated = (data, stats) => {
+            setInsightsData(data);
+            setCsvStats(stats);
+            setIsAnalyzing(false);
+            setActiveTab('insights');
+        };
+
+        const tabs = [
+            { key: 'upload',        label: 'ð Upload',           disabled: false },
+            { key: 'insights',      label: 'ð Insights Report',  disabled: !insightsData },
+            { key: 'conversations', label: 'ð By Product Area',  disabled: !csvData },
+            { key: 'confluence',    label: 'ð° Confluence Sync',  disabled: false },
+        ];
+
+        return (
+            <div className="min-h-screen bg-gray-50">
+                <header className="bg-white shadow-sm sticky top-0 z-50">
+                    <div className="max-w-7xl mx-auto px-6 py-5">
+                        <div className="flex items-center gap-3">
+                            <span className="text-3xl">ð</span>
+                            <div>
+                                <h1 className="text-2xl font-bold text-gray-900">Perpay â Weekly Product Decagon Insights</h1>
+                                <p className="text-sm text-gray-500 mt-0.5">Upload Decagon CSV â Auto-analyze â Publish to Confluence</p>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <main className="max-w-7xl mx-auto px-6 py-8">
+                    <div className="flex gap-0 border-b border-gray-200 bg-white rounded-t-xl overflow-hidden">
+                        {tabs.map(({ key, label, disabled }) => (
+                            <button key={key}
+                                onClick={() => !disabled && setActiveTab(key)}
+                                disabled={disabled}
+                                className={`tab-button ${activeTab === key ? 'active' : ''}`}>
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="bg-white rounded-b-xl p-8 min-h-96 shadow-sm">
+                        {activeTab === 'upload' && (
+                            <UploadTab
+                                onDataLoaded={setCsvData}
+                                onAnalyzing={setIsAnalyzing}
+                                isAnalyzing={isAnalyzing}
+                                conversations={csvData}
+                                onInsightsGenerated={handleInsightsGenerated}
+                            />
+                        )}
+                        {activeTab === 'insights' && (
+                            <InsightsReportTab
+                                insightsData={insightsData}
+                                csvStats={csvStats}
+                                onPublish={() => setActiveTab('confluence')}
+                                isPublishing={false}
+                            />
+                        )}
+                        {activeTab === 'conversations' && (
+                            <ConversationsTab conversations={csvData} />
+                        )}
+                        {activeTab === 'confluence' && (
+                            <ConfluenceSyncTab insightsData={insightsData} />
+                        )}
+                    </div>
+                </main>
+
+                <footer className="bg-white border-t border-gray-200 mt-12">
+                    <div className="max-w-7xl mx-auto px-6 py-5 text-center text-sm text-gray-400">
+                        Perpay â Weekly Product Decagon Insights Tool
+                    </div>
+                </footer>
+            </div>
+        );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
 </body>
 </html>
