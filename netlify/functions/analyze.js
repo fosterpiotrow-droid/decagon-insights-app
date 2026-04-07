@@ -21,7 +21,6 @@ export default async function handler(req, context) {
       });
     }
 
-    // Sample up to 5 conversations server-side
     const maxConversations = 5;
     let sampled = conversations;
     if (conversations.length > maxConversations) {
@@ -50,14 +49,14 @@ ${dateInfo}CONVERSATIONS:
 ${convText}
 
 Output ONLY a raw JSON array. Each item must have these exact fields:
-- theme: short issue title
-- summary: 1-2 sentence description
-- productArea: one of Card, Marketplace, Perpay+, Credit, App, Other
-- severity: High, Medium, or Low
-- frequency: number of conversations affected
-- customerSignals: array of verbatim customer quotes (or empty array)
-- recommendations: array of concrete product actions (or empty array)
-- conversationUrls: array of URLs (or empty array)`;
+- theme: short issue title (string)
+- summary: 1-2 sentence description (string)
+- productArea: one of Card, Marketplace, Perpay+, Credit, App, Other (string)
+- severity: High, Medium, or Low (string)
+- frequency: number of conversations affected (number)
+- customerSignals: array of verbatim customer quotes (array of strings, or empty array)
+- recommendations: array of concrete product actions (array of strings, or empty array)
+- conversationUrls: array of URLs (array of strings, or empty array)`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8500);
@@ -89,7 +88,6 @@ Output ONLY a raw JSON array. Each item must have these exact fields:
     }
     if (!Array.isArray(insights)) insights = [];
 
-    // Normalize fields — handle any naming variations Claude might use
     insights = insights.map(insight => ({
       theme: insight.theme || insight.title || 'Unknown Issue',
       summary: insight.summary || insight.description || '',
@@ -107,7 +105,6 @@ Output ONLY a raw JSON array. Each item must have these exact fields:
       conversationUrls: Array.isArray(insight.conversationUrls) ? insight.conversationUrls : [],
     }));
 
-    // Route insights into per-product allInsights buckets
     const allInsights = { card: [], perpayPlus: [], marketplace: [], general: [] };
     for (const insight of insights) {
       const area = (insight.productArea || '').toLowerCase();
