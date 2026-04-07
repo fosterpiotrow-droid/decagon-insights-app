@@ -275,12 +275,25 @@
                 onAnalyzing(true);
                 try {
                     const truncate = (str, max) => str && str.length > max ? str.substring(0, max) : str;
-                    // Sample up to 10 conversations client-side before sending (keeps function fast)
-            const sampleSize = 10;
-            const sampledConvs = conversations.length > sampleSize
-              ? [...conversations].sort(() => Math.random() - 0.5).slice(0, sampleSize)
-              : conversations;
-            const convPayload = sampledConvs.map(c => ({
+
+                    // Filter ALL conversations by actionability criteria — no random sampling
+                    const KEYWORDS = ['frustrated','close account','cancel','refund','not working',
+                      'broken','disappointed','angry','worst','scam','stolen','unauthorized',
+                      'never received','still waiting','ridiculous','unacceptable','misleading','confused'];
+
+                    const filtered = conversations.filter(c => {
+                        if (c['Undeflected'] === 'True') return true;
+                        const summary = (c['Summary'] || '').toLowerCase();
+                        if (KEYWORDS.some(kw => summary.includes(kw))) return true;
+                        if (c['Customer Feedback'] && c['Customer Feedback'].trim().length > 10) return true;
+                        try {
+                            const flags = JSON.parse(c['Watchtower Flags'] || '[]');
+                            if (Array.isArray(flags) && flags.length > 0) return true;
+                        } catch(e) {}
+                        return false;
+                    });
+
+                    const convPayload = filtered.map(c => ({
                         summary: truncate(c['Summary'] || '', 300),
                         tags: c['Tags'] || '',
                         customerFeedback: truncate(c['Customer Feedback'] || '', 150),
@@ -289,6 +302,12 @@
                         conversationUrl: c['Conversation URL'] || '',
                         createdAt: c['Created At'] || '',
                     }));
+
+                    if (convPayload.length === 0) {
+                        alert('No actionable conversations found. Try uploading a CSV with more customer feedback or undeflected conversations.');
+                        onAnalyzing(false);
+                        return;
+                    }
 
                     const resp = await fetch('/.netlify/functions/analyze', {
                         method: 'POST',
@@ -897,7 +916,7 @@
             };
 
             const handlePublish = () => {
-                setIsPublishing(true);
+                setActiveTab('confluence');
             };
 
             return (
