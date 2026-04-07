@@ -275,7 +275,12 @@
                 onAnalyzing(true);
                 try {
                     const truncate = (str, max) => str && str.length > max ? str.substring(0, max) : str;
-                    const convPayload = conversations.map(c => ({
+                    // Sample up to 10 conversations client-side before sending (keeps function fast)
+            const sampleSize = 10;
+            const sampledConvs = conversations.length > sampleSize
+              ? [...conversations].sort(() => Math.random() - 0.5).slice(0, sampleSize)
+              : conversations;
+            const convPayload = sampledConvs.map(c => ({
                         summary: truncate(c['Summary'] || '', 300),
                         tags: c['Tags'] || '',
                         customerFeedback: truncate(c['Customer Feedback'] || '', 150),
