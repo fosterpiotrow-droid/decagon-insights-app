@@ -16,7 +16,6 @@ export default async function handler(req, context) {
       });
     }
 
-    // Sample up to 5 conversations
     const sampled = conversations.length > 5
       ? [...conversations].sort(() => Math.random() - 0.5).slice(0, 5)
       : conversations;
@@ -26,14 +25,11 @@ export default async function handler(req, context) {
       `[${i+1}] ${tr(c.summary, 250)} | Tags:${c.tags || ''} | Feedback:${tr(c.customerFeedback, 120)}`
     ).join('\n');
 
-    const userPrompt = `Analyze these ${sampled.length} Perpay customer support conversations and identify the top 3 issues. Output ONLY the JSON value for the topInsights array — no other text.
+    const userPrompt = `Analyze these ${sampled.length} Perpay customer support conversations and identify the top 3 issues. Output ONLY the JSON array value — no other text.
 
 ${convText}
 
-Each insight needs: title, productArea (Card|Marketplace|Perpay+|Credit|App|Other), impact (High|Medium|Low), frequency (number), description (1-2 sentences), customerQuote (exact quote or null), recommendedAction (one action)`;
-
-    // Prefill forces Claude to output raw JSON array directly — no code fences possible
-    const prefill = '[';
+Each insight needs: title, productArea (Card|Marketplace|Perpay+|Credit|App|Other), impact (High|Medium|Low), frequency (number), description (1-2 sentences), customerQuote (exact quote or null), recommendedAction (one concrete action)`;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8500);
@@ -46,7 +42,7 @@ Each insight needs: title, productArea (Card|Marketplace|Perpay+|Credit|App|Othe
           max_tokens: 1200,
           messages: [
             { role: 'user', content: userPrompt },
-            { role: 'assistant', content: prefill },
+            { role: 'assistant', content: '[' },
           ],
         },
         { signal: controller.signal }
@@ -55,26 +51,34 @@ Each insight needs: title, productArea (Card|Marketplace|Perpay+|Credit|App|Othe
       clearTimeout(timeout);
     }
 
-    // Response continues from prefill — reconstruct full JSON array
-    const raw = prefill + msg.content[0].text;
-
-    let insights;
+    const raw = '[' + msg.content[0].text;
+    let insights = [];
     try {
       insights = JSON.parse(raw);
     } catch(e) {
-      // Fallback: try to extract array anyway
       const m = raw.match(/\[[\s\S]*\]/);
       try { insights = JSON.parse(m ? m[0] : '[]'); } catch(e2) { insights = []; }
     }
 
-    const totalConvos = conversations.length;
+    if (!Array.isArray(insights)) insights = [];
+
+    // Populate allInsights by routing each insight to its category
+    const allInsights = { card: [], perpayPlus: [], marketplace: [], general: [] };
+    for (const insight of insights) {
+      const area = (insight.productArea || '').toLowerCase();
+      if (area === 'card') allInsights.card.push(insight);
+      else if (area === 'perpay+' || area === 'perpaypls' || area.includes('perpay+')) allInsights.perpayPlus.push(insight);
+      else if (area === 'marketplace') allInsights.marketplace.push(insight);
+      else allInsights.general.push(insight);
+    }
+
     const dateStr = dateRange.start ? `${dateRange.start} to ${dateRange.end || ''}` : '';
 
     return new Response(JSON.stringify({
-      topInsights: Array.isArray(insights) ? insights : [],
-      allInsights: { card: [], perpayPlus: [], marketplace: [], general: [] },
+      topInsights: insights,
+      allInsights,
       metadata: {
-        totalConversations: totalConvos,
+        totalConversations: conversations.length,
         filteredConversations: sampled.length,
         dateRange: dateStr,
         generatedAt: new Date().toISOString(),
