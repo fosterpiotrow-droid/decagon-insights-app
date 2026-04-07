@@ -16,35 +16,38 @@ export default async function handler(req, context) {
       });
     }
 
-    // Sample up to 3 conversations (already pre-sampled client-side, but cap here too)
+    // Sample up to 5 conversations
     const sampled = conversations.length > 5
       ? [...conversations].sort(() => Math.random() - 0.5).slice(0, 5)
       : conversations;
 
     const tr = (s, n) => s && s.length > n ? s.substring(0, n) + '...' : (s || '');
-
     const convText = sampled.map((c, i) =>
       `[${i+1}] ${tr(c.summary, 250)} | Tags:${c.tags || ''} | Feedback:${tr(c.customerFeedback, 120)}`
     ).join('\n');
 
-    const prompt = `Analyze these ${sampled.length} Perpay customer support conversations. Identify top 3 issues.
+    const userPrompt = `Analyze these ${sampled.length} Perpay customer support conversations and identify the top 3 issues. Output ONLY the JSON value for the topInsights array — no other text.
 
 ${convText}
 
-Respond ONLY with raw JSON (no markdown, no code fences):
-{"topInsights":[{"title":"...","productArea":"Card|Marketplace|Perpay+|Credit|App|Other","impact":"High|Medium|Low","frequency":1,"description":"...","customerQuote":"...","recommendedAction":"..."}],"allInsights":{"card":[],"perpayPlus":[],"marketplace":[],"general":[]},"metadata":{"totalConversations":${conversations.length},"filteredConversations":${sampled.length},"dateRange":"${dateRange.start || ''} to ${dateRange.end || ''}","generatedAt":"${new Date().toISOString()}"}}`;
+Each insight needs: title, productArea (Card|Marketplace|Perpay+|Credit|App|Other), impact (High|Medium|Low), frequency (number), description (1-2 sentences), customerQuote (exact quote or null), recommendedAction (one action)`;
 
-    // 8-second timeout to stay within Netlify's 10s limit
+    // Prefill forces Claude to output raw JSON array directly — no code fences possible
+    const prefill = '[';
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 8500);
 
     let msg;
     try {
       msg = await client.messages.create(
         {
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1000,
-          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 1200,
+          messages: [
+            { role: 'user', content: userPrompt },
+            { role: 'assistant', content: prefill },
+          ],
         },
         { signal: controller.signal }
       );
@@ -52,26 +55,39 @@ Respond ONLY with raw JSON (no markdown, no code fences):
       clearTimeout(timeout);
     }
 
-    const raw = msg.content[0].text;
-    const stripped = raw.replace(/^```(?:json)?\s*/,'').replace(/```\s*$/,'').trim();
-    let parsed;
+    // Response continues from prefill — reconstruct full JSON array
+    const raw = prefill + msg.content[0].text;
+
+    let insights;
     try {
-      const m = stripped.match(/\{[\s\S]*\}/);
-      parsed = JSON.parse(m ? m[0] : stripped);
+      insights = JSON.parse(raw);
     } catch(e) {
-      return new Response(JSON.stringify({ error: 'Parse error', raw }), {
-        status: 500, headers: { 'Content-Type': 'application/json' },
-      });
+      // Fallback: try to extract array anyway
+      const m = raw.match(/\[[\s\S]*\]/);
+      try { insights = JSON.parse(m ? m[0] : '[]'); } catch(e2) { insights = []; }
     }
 
-    return new Response(JSON.stringify(parsed), {
+    const totalConvos = conversations.length;
+    const dateStr = dateRange.start ? `${dateRange.start} to ${dateRange.end || ''}` : '';
+
+    return new Response(JSON.stringify({
+      topInsights: Array.isArray(insights) ? insights : [],
+      allInsights: { card: [], perpayPlus: [], marketplace: [], general: [] },
+      metadata: {
+        totalConversations: totalConvos,
+        filteredConversations: sampled.length,
+        dateRange: dateStr,
+        generatedAt: new Date().toISOString(),
+      },
+    }), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     });
+
   } catch(err) {
-    const isTimeout = err.name === 'AbortError' || err.message?.includes('abort');
+    const isTimeout = err.name === 'AbortError' || (err.message || '').includes('abort');
     console.error('Analyze error:', err.message);
     return new Response(JSON.stringify({
-      error: isTimeout ? 'Analysis timed out — try again in a moment' : (err.message || 'Internal error')
+      error: isTimeout ? 'Analysis timed out — please try again' : (err.message || 'Internal error'),
     }), {
       status: 500, headers: { 'Content-Type': 'application/json' },
     });
