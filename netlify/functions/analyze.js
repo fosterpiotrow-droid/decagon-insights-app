@@ -61,7 +61,7 @@ export default async function handler(req, context) {
     const sampled = [];
     for (const convs of Object.values(byArea)) {
       const sorted = [...convs].sort((a, b) => scoreConversation(b) - scoreConversation(a));
-      sampled.push(...sorted.slice(0, 5));
+      sampled.push(...sorted.slice(0, 3));
     }
 
     const tr = (s, n) => s && s.length > n ? s.substring(0, n) + '...' : (s || '');
@@ -100,7 +100,7 @@ Output ONLY a raw JSON array. Each item must have these exact fields:
       msg = await client.messages.create(
         {
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1800,
+          max_tokens: 500,
           messages: [
             { role: 'user', content: userPrompt },
             { role: 'assistant', content: '[{' },
