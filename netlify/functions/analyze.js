@@ -35,7 +35,7 @@ Reply ONLY with JSON:
 {"topInsights":[{"title":"string","productArea":"Card|Marketplace|Perpay+|Credit|App|Other","impact":"High|Medium|Low","frequency":1,"description":"string","customerQuote":"string or null","recommendedAction":"string"}],"allInsights":{"card":[],"perpayPlus":[],"marketplace":[],"general":[]},"metadata":{"totalConversations":${conversations.length},"filteredConversations":${sampled.length},"dateRange":"${dateRange.start||''} to ${dateRange.end||''}","generatedAt":"${new Date().toISOString()}"}}`;
 
     const msg = await client.messages.create({
-      model: 'claude-3-haiku-20240307',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 400,
       messages: [{ role: 'user', content: prompt }],
     });
