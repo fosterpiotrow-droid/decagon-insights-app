@@ -275,40 +275,38 @@
                 onAnalyzing(true);
                 try {
                     const truncate = (str, max) => str && str.length > max ? str.substring(0, max) : str;
-
-                    // Filter ALL conversations by actionability criteria — no random sampling
                     const KEYWORDS = ['frustrated','close account','cancel','refund','not working',
-                      'broken','disappointed','angry','worst','scam','stolen','unauthorized',
-                      'never received','still waiting','ridiculous','unacceptable','misleading','confused'];
-
-                    const filtered = conversations.filter(c => {
-                        if (c['Undeflected'] === 'True') return true;
-                        const summary = (c['Summary'] || '').toLowerCase();
-                        if (KEYWORDS.some(kw => summary.includes(kw))) return true;
-                        if (c['Customer Feedback'] && c['Customer Feedback'].trim().length > 10) return true;
+                        'broken','disappointed','angry','worst','scam','stolen','unauthorized',
+                        'never received','still waiting','ridiculous','unacceptable','misleading','confused'];
+                    const scored = conversations.map(c => {
+                        let score = 0;
+                        if (c['Undeflected'] === 'True') score += 10;
+                        const sum = (c['Summary'] || '').toLowerCase();
+                        KEYWORDS.forEach(kw => { if (sum.includes(kw)) score += 3; });
+                        if (c['Customer Feedback'] && c['Customer Feedback'].trim().length > 10) score += 5;
                         try {
                             const flags = JSON.parse(c['Watchtower Flags'] || '[]');
-                            if (Array.isArray(flags) && flags.length > 0) return true;
+                            if (Array.isArray(flags) && flags.length > 0) {
+                                if (flags.find(f => f.flagType === 'CX by Intent' && f.score <= 3)) score += 8;
+                                if (flags.find(f => f.flagType === 'Complaint' && f.flagged === true)) score += 6;
+                            }
                         } catch(e) {}
-                        return false;
+                        return { conv: c, score };
                     });
-
-                    const convPayload = filtered.map(c => ({
+                    const actionable = scored.filter(({ score }) => score > 0);
+                    if (actionable.length === 0) {
+                        alert('No actionable conversations found in this CSV.');
+                        onAnalyzing(false); return;
+                    }
+                    const top = actionable.sort((a, b) => b.score - a.score).slice(0, 300);
+                    const convPayload = top.map(({ conv: c }) => ({
                         summary: truncate(c['Summary'] || '', 300),
                         tags: c['Tags'] || '',
                         customerFeedback: truncate(c['Customer Feedback'] || '', 150),
-                        watchtowerFlags: c['Watchtower Flags'] || '',
                         undeflected: c['Undeflected'] || '',
                         conversationUrl: c['Conversation URL'] || '',
                         createdAt: c['Created At'] || '',
                     }));
-
-                    if (convPayload.length === 0) {
-                        alert('No actionable conversations found. Try uploading a CSV with more customer feedback or undeflected conversations.');
-                        onAnalyzing(false);
-                        return;
-                    }
-
                     const resp = await fetch('/.netlify/functions/analyze', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -317,14 +315,12 @@
                             dateRange: stats.dateRange ? { start: stats.dateRange.min, end: stats.dateRange.max } : {}
                         })
                     });
-
                     if (!resp.ok) {
                         const errText = await resp.text();
                         let errMsg;
                         try { errMsg = JSON.parse(errText).error || errText; } catch(e) { errMsg = errText; }
                         throw new Error(errMsg);
                     }
-
                     const data = await resp.json();
                     onInsightsGenerated(data);
                 } catch (err) {
