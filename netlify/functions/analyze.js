@@ -23,49 +23,63 @@ export default async function handler(req, context) {
   const sample = conversations.slice(0, 8);
 
   const lines = sample.map((c, i) =>
-    `${i+1}. ${(c.summary||'').substring(0,90)}${c.undeflected==='True'?' [ESC]':''}${c.customerFeedback?' | "'+c.customerFeedback.substring(0,50)+'"':''}`
+    (i+1) + '. ' + (c.summary || '').substring(0, 80) + (c.undeflected === 'True' ? ' [ESC]' : '') + (c.customerFeedback ? ' | "' + c.customerFeedback.substring(0, 40) + '"' : '')
   ).join('\n');
 
-  const prompt = `Perpay support analyst. ${total} convos this week, ${undPct}% undeflected. Top issues:
-${lines}
-
-Return JSON only: {"narrative":"2-3 sentences. Start: This week's dominant theme is [topic]...","themes":[{"theme":"name","area":"Card|Marketplace|Perpay+|Core","severity":"Critical|High|Medium|Low","summary":"1-2 sentences","signal":"customer quote from above"}]}
-Give exactly 3 themes sorted by severity. JSON only, no fences.`;
-
-  const controller = new AbortController();
-  const tid = setTimeout(() => controller.abort(), 8000);
+  const prompt = 'Perpay support analyst. ' + total + ' convos this week, ' + undPct + '% undeflected. Top issues:\n' + lines + '\nReturn JSON: {"narrative":"2 sentences max","themes":[{"theme":"short name","area":"Card|Marketplace|Perpay+|Core","severity":"Critical|High|Medium|Low","summary":"1 sentence","signal":"short quote"}]}\nExactly 3 themes. Keep every value under 80 chars. JSON only, no markdown fences.';
 
   try {
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 350,
+      max_tokens: 500,
       messages: [
         { role: 'user', content: prompt },
         { role: 'assistant', content: '{' }
       ]
     });
 
-    clearTimeout(tid);
-
     let raw = '{' + (resp.content[0]?.text || '');
-    // Ensure valid JSON by finding last complete }
-    const lb = raw.lastIndexOf('}');
-    if (lb > 0) raw = raw.substring(0, lb + 1);
 
-    let result;
-    try { result = JSON.parse(raw); } catch(e) {
-      // Try to salvage - find outermost braces
-      const m = raw.match(/\{[\s\S]*\}/);
-      if (m) result = JSON.parse(m[0]);
-      else throw new Error('Could not parse AI response');
+    // Robust JSON salvage: try parse as-is, then progressively fix
+    let parsed = null;
+    try {
+      parsed = JSON.parse(raw);
+    } catch(e1) {
+      // Try closing truncated JSON
+      // Remove any trailing incomplete string value
+      let fixed = raw.replace(/,"[^"]*$/, '').replace(/,"?$/, '');
+      // Try adding closing brackets
+      const closers = [']}', '}]}', '"}]}', '"}]}'];
+      for (const closer of closers) {
+        try {
+          parsed = JSON.parse(fixed + closer);
+          break;
+        } catch(e2) {}
+      }
+      if (!parsed) {
+        // Last resort: find last complete theme object
+        const lastGood = fixed.lastIndexOf('}');
+        if (lastGood > 0) {
+          const trimmed = fixed.substring(0, lastGood + 1);
+          for (const closer of [']}', ']}']) {
+            try {
+              parsed = JSON.parse(trimmed + closer);
+              break;
+            } catch(e3) {}
+          }
+        }
+      }
+      if (!parsed) {
+        return new Response(JSON.stringify({ error: e1.message }), { status: 500, headers: h });
+      }
     }
 
-    return new Response(JSON.stringify(result), { status: 200, headers: h });
-  } catch(err) {
-    clearTimeout(tid);
-    const msg = err.name === 'AbortError' || err.message === 'timeout'
-      ? 'Analysis timed out - please try again'
-      : (err.message || 'Internal error');
-    return new Response(JSON.stringify({ error: msg }), { status: err.name === 'AbortError' ? 504 : 500, headers: h });
+    return new Response(JSON.stringify(parsed), { status: 200, headers: h });
+  } catch (err) {
+    const msg = err.message || 'Unknown error';
+    if (msg.includes('timeout') || msg.includes('FUNCTION_INVOCATION_TIMEOUT')) {
+      return new Response(JSON.stringify({ error: 'Analysis timed out. Try again.' }), { status: 504, headers: h });
+    }
+    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: h });
   }
 }
