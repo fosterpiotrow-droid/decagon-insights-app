@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Perpay â Weekly Product Decagon Insights</title>
+    <title>Perpay -  Weekly Product Decagon Insights</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -63,7 +63,7 @@
         return f ? (f.rubric_score || f.score) : null;
     };
 
-    // âââ Upload Tab âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // --- Upload Tab -----------------------------------------------------------
     const UploadTab = ({ onDataLoaded, onAnalyzing, isAnalyzing, conversations, onInsightsGenerated }) => {
         const [dragOver, setDragOver] = useState(false);
         const [stats, setStats] = useState(null);
@@ -175,7 +175,7 @@
                     onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) parseCSV(f); else alert('Please drop a CSV file'); }}
                     onClick={() => fileInputRef.current?.click()}
                 >
-                    <div className="text-4xl mb-4">ð</div>
+                    <div className="text-4xl mb-4"></div>
                     <h3 className="text-xl font-semibold text-gray-900 mb-2">Upload Decagon CSV</h3>
                     <p className="text-gray-600 mb-4">Drag and drop your CSV file here, or click to browse</p>
                     <input ref={fileInputRef} type="file" accept=".csv" onChange={(e) => { if (e.target.files[0]) parseCSV(e.target.files[0]); }} className="hidden" />
@@ -201,7 +201,7 @@
                             </div>
                             <div className="bg-white p-6 rounded-xl shadow-sm">
                                 <p className="text-gray-500 text-sm font-medium mb-1">Date Range</p>
-                                <p className="text-sm font-semibold text-gray-900">{stats.dateRange ? `${stats.dateRange.min} â ${stats.dateRange.max}` : 'N/A'}</p>
+                                <p className="text-sm font-semibold text-gray-900">{stats.dateRange ? `${stats.dateRange.min} - ${stats.dateRange.max}` : 'N/A'}</p>
                             </div>
                         </div>
                         <button
@@ -217,14 +217,14 @@
 
                 {!stats && (
                     <div className="mt-12 text-center text-gray-500">
-                        <p className="text-lg">ð Start by uploading a Decagon CSV file</p>
+                        <p className="text-lg"> Start by uploading a Decagon CSV file</p>
                     </div>
                 )}
             </div>
         );
     };
 
-    // âââ Insights Report Tab ââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // --- Insights Report Tab --------------------------------------------------
     const InsightsReportTab = ({ insightsData, csvStats, onPublish, isPublishing }) => {
         if (!insightsData) {
             return (
@@ -246,8 +246,8 @@
         const total = csvStats?.totalConversations || 0;
         const undeflectedCount = csvStats?.escalatedCount || 0;
         const undeflectedPct = total > 0 ? Math.round((undeflectedCount / total) * 100) : 0;
-        const dateRange = csvStats?.dateRange ? `${csvStats.dateRange.min} â ${csvStats.dateRange.max}` : 'N/A';
-        const avgCX = csvStats?.avgCXScore || 'â';
+        const dateRange = csvStats?.dateRange ? `${csvStats.dateRange.min} - ${csvStats.dateRange.max}` : 'N/A';
+        const avgCX = csvStats?.avgCXScore || ' - ';
 
         const areaTagStyle = {
             'Card':        'bg-blue-100 text-blue-800',
@@ -267,7 +267,7 @@
         return (
             <div className="fade-in">
 
-                {/* ââ Stats Bar ââ */}
+                {/* -- Stats Bar -- */}
                 <div className="grid grid-cols-2 md:grid-cols-5 border border-gray-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
                     <div className="p-5 border-r border-gray-100">
                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Reporting Week</p>
@@ -285,30 +285,30 @@
                     </div>
                     <div className="p-5 border-r border-gray-100">
                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Retention Risk</p>
-                        <p className="text-2xl font-bold text-gray-300">â</p>
+                        <p className="text-2xl font-bold text-gray-300"> - </p>
                         <p className="text-xs text-gray-400">not tracked</p>
                     </div>
                     <div className="p-5">
                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">CSAT</p>
-                        <p className="text-2xl font-bold text-gray-900">{avgCX} <span className="text-yellow-400 text-lg">â</span></p>
+                        <p className="text-2xl font-bold text-gray-900">{avgCX} <span className="text-yellow-400 text-lg"></span></p>
                         <p className="text-xs text-gray-400">avg CX score</p>
                     </div>
                 </div>
 
-                {/* ââ Product Head Read Card ââ */}
+                {/* -- Product Head Read Card -- */}
                 <div className="rounded-xl p-7 mb-8" style={{background: '#1a3354'}}>
                     <p className="text-xs font-bold tracking-widest uppercase mb-4" style={{color: '#64748b'}}>
-                        ð &nbsp;Product Head Read
+                         &nbsp;Product Head Read
                     </p>
                     <h2 className="text-2xl font-bold text-white mb-1">{dateRange}</h2>
                     <p className="text-sm mb-6" style={{color: '#7ea0c0'}}>
-                        {total.toLocaleString()} conversations &nbsp;Â·&nbsp; {undeflectedPct}% undeflected &nbsp;Â·&nbsp; {themes.length} friction themes detected
+                        {total.toLocaleString()} conversations &nbsp;|&nbsp; {undeflectedPct}% undeflected &nbsp;|&nbsp; {themes.length} friction themes detected
                     </p>
 
                     {topIssues.length > 0 && (
                         <>
                             <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{color: '#fbbf24'}}>
-                                â¡ &nbsp;Top {topIssues.length} Priority Issues This Week
+                                 &nbsp;Top {topIssues.length} Priority Issues This Week
                             </p>
                             <ol className="space-y-3 mb-6">
                                 {topIssues.map((issue, i) => (
@@ -316,7 +316,7 @@
                                         <span className="flex-shrink-0 font-bold w-4" style={{color: '#64748b'}}>{i + 1}</span>
                                         <span>
                                             <strong className="text-white">{issue.title} ({issue.pct}%, {(issue.convos || 0).toLocaleString()} convos)</strong>
-                                            {' '}â {issue.description}
+                                            {' '} -  {issue.description}
                                         </span>
                                     </li>
                                 ))}
@@ -331,12 +331,12 @@
                     )}
                 </div>
 
-                {/* ââ Friction Themes ââ */}
+                {/* -- Friction Themes -- */}
                 <div className="mb-8">
                     <div className="flex items-center gap-2 mb-5">
-                        <span className="text-yellow-500 text-lg">â¡</span>
+                        <span className="text-yellow-500 text-lg"></span>
                         <h3 className="text-lg font-bold text-gray-900">Friction Themes</h3>
-                        <span className="text-sm text-gray-400">â {themes.length} patterns Â· sorted by severity then volume</span>
+                        <span className="text-sm text-gray-400"> -  {themes.length} patterns | sorted by severity then volume</span>
                     </div>
 
                     <div className="space-y-5">
@@ -358,7 +358,7 @@
                                             </span>
                                             <div className="text-right">
                                                 <p className={`text-sm font-bold ${highVolume ? 'text-red-600' : 'text-gray-700'}`}>
-                                                    {(theme.conversationCount || 0).toLocaleString()} convos Â· {theme.volumePct || 0}%
+                                                    {(theme.conversationCount || 0).toLocaleString()} convos | {theme.volumePct || 0}%
                                                 </p>
                                                 <p className="text-xs text-gray-400">of week's volume</p>
                                             </div>
@@ -392,7 +392,7 @@
                                                 <div className="space-y-1.5">
                                                     {recs.map((rec, i) => (
                                                         <div key={i} className="flex items-start gap-2">
-                                                            <span className="text-indigo-500 font-bold text-sm mt-0.5 flex-shrink-0">â</span>
+                                                            <span className="text-indigo-500 font-bold text-sm mt-0.5 flex-shrink-0">></span>
                                                             <p className="text-sm text-gray-800">{rec}</p>
                                                         </div>
                                                     ))}
@@ -414,14 +414,14 @@
                         className="w-full px-6 py-3 bg-emerald-500 text-white rounded-lg font-semibold hover:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         {isPublishing && <div className="spinner"></div>}
-                        {isPublishing ? 'Publishing...' : 'ð Publish to Confluence'}
+                        {isPublishing ? 'Publishing...' : 'Publish to Confluence'}
                     </button>
                 </div>
             </div>
         );
     };
 
-    // âââ By Product Area Tab ââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // --- By Product Area Tab --------------------------------------------------
     const ConversationsTab = ({ conversations }) => {
         const [expandedArea, setExpandedArea] = useState(null);
         const [expandedConv, setExpandedConv] = useState(null);
@@ -503,10 +503,10 @@
                         <div key={area} className={`${colors.bg} border ${colors.border} rounded-xl p-6 fade-in`}>
                             <div className="flex items-center justify-between mb-4">
                                 <div>
-                                    <h3 className={`text-lg font-bold ${colors.header}`}>{area} â Top Actionable Conversations</h3>
-                                    <p className="text-sm text-gray-500">{cfg.desc} Â· {data.total} total, {data.flaggedCount} flagged, {data.escalatedCount} escalated</p>
+                                    <h3 className={`text-lg font-bold ${colors.header}`}>{area} -  Top Actionable Conversations</h3>
+                                    <p className="text-sm text-gray-500">{cfg.desc} | {data.total} total, {data.flaggedCount} flagged, {data.escalatedCount} escalated</p>
                                 </div>
-                                <button onClick={() => setExpandedArea(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">Ã</button>
+                                <button onClick={() => setExpandedArea(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none"></button>
                             </div>
                             <div className="space-y-3">
                                 {data.topConvs.map((conv, idx) => {
@@ -524,14 +524,14 @@
                                                             {isFlagged(conv) && <span className="bg-red-100 text-red-700 font-semibold px-2 py-0.5 rounded">Needs Review</span>}
                                                         </div>
                                                     </div>
-                                                    <span className="text-gray-400 text-xs mt-1">{expanded ? 'â²' : 'â¼'}</span>
+                                                    <span className="text-gray-400 text-xs mt-1">{expanded ? '' : ''}</span>
                                                 </div>
                                             </div>
                                             {expanded && (
                                                 <div className="border-t border-gray-100 p-4 bg-gray-50 space-y-3">
                                                     {conv.Resolution && <div><p className="text-xs font-semibold text-gray-400 uppercase mb-1">Resolution</p><p className="text-sm text-gray-700">{conv.Resolution}</p></div>}
                                                     {conv['Customer Feedback'] && <div><p className="text-xs font-semibold text-gray-400 uppercase mb-1">Customer Feedback</p><p className="text-sm text-gray-700">{conv['Customer Feedback']}</p></div>}
-                                                    {conv['Conversation URL'] && <a href={conv['Conversation URL']} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">View in Decagon â</a>}
+                                                    {conv['Conversation URL'] && <a href={conv['Conversation URL']} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">View in Decagon ></a>}
                                                 </div>
                                             )}
                                         </div>
@@ -545,7 +545,7 @@
         );
     };
 
-    // âââ Confluence Sync Tab ââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // --- Confluence Sync Tab --------------------------------------------------
     const ConfluenceSyncTab = ({ insightsData, csvStats }) => {
         const [pageId, setPageId] = useState('4451237894');
         const [publishStatus, setPublishStatus] = useState(null);
@@ -574,7 +574,7 @@
             <div className="fade-in">
                 {!insightsData ? (
                     <div className="text-center py-12 bg-white rounded-xl shadow-sm">
-                        <p className="text-gray-400 text-lg">ð Generate insights first to publish</p>
+                        <p className="text-gray-400 text-lg"> Generate insights first to publish</p>
                     </div>
                 ) : (
                     <div className="space-y-6">
@@ -586,10 +586,10 @@
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                             </div>
                             <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-                                <p className="text-sm text-emerald-800 font-medium">â Connected to perpay.atlassian.net</p>
+                                <p className="text-sm text-emerald-800 font-medium">(ok) Connected to perpay.atlassian.net</p>
                             </div>
                             {lastPublished && <p className="text-sm text-gray-500 mb-4">Last published: {lastPublished.toLocaleString()}</p>}
-                            {publishStatus === 'success' && <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg"><p className="text-sm text-emerald-800 font-medium">â Successfully published to Confluence!</p></div>}
+                            {publishStatus === 'success' && <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg"><p className="text-sm text-emerald-800 font-medium">(ok) Successfully published to Confluence!</p></div>}
                             {publishStatus === 'publishing' && <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2"><div className="spinner"></div><p className="text-sm text-blue-800">Publishing...</p></div>}
                         </div>
 
@@ -601,7 +601,7 @@
                                         <span className="font-bold text-gray-300 w-5 flex-shrink-0">{i+1}.</span>
                                         <div>
                                             <strong className="text-gray-900">{t.theme}</strong>
-                                            <span className="text-gray-500"> â {(t.summary || '').substring(0, 100)}{(t.summary || '').length > 100 ? '...' : ''}</span>
+                                            <span className="text-gray-500"> -  {(t.summary || '').substring(0, 100)}{(t.summary || '').length > 100 ? '...' : ''}</span>
                                         </div>
                                     </div>
                                 ))}
@@ -614,7 +614,7 @@
                             className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             {publishStatus === 'publishing' && <div className="spinner"></div>}
-                            {publishStatus === 'publishing' ? 'Publishing...' : 'ð Publish to Confluence'}
+                            {publishStatus === 'publishing' ? 'Publishing...' : ' Publish to Confluence'}
                         </button>
                     </div>
                 )}
@@ -622,7 +622,7 @@
         );
     };
 
-    // âââ App ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // --- App ------------------------------------------------------------------
     const App = () => {
         const [activeTab, setActiveTab] = useState('upload');
         const [csvData, setCsvData] = useState(null);
@@ -638,10 +638,10 @@
         };
 
         const tabs = [
-            { key: 'upload',        label: 'ð Upload',           disabled: false },
-            { key: 'insights',      label: 'ð Insights Report',  disabled: !insightsData },
-            { key: 'conversations', label: 'ð By Product Area',  disabled: !csvData },
-            { key: 'confluence',    label: 'ð° Confluence Sync',  disabled: false },
+            { key: 'upload',        label: 'Upload',           disabled: false },
+            { key: 'insights',      label: 'Insights Report',  disabled: !insightsData },
+            { key: 'conversations', label: 'By Product Area',  disabled: !csvData },
+            { key: 'confluence',    label: 'Confluence Sync',  disabled: false },
         ];
 
         return (
@@ -649,10 +649,10 @@
                 <header className="bg-white shadow-sm sticky top-0 z-50">
                     <div className="max-w-7xl mx-auto px-6 py-5">
                         <div className="flex items-center gap-3">
-                            <span className="text-3xl">ð</span>
+                            
                             <div>
-                                <h1 className="text-2xl font-bold text-gray-900">Perpay â Weekly Product Decagon Insights</h1>
-                                <p className="text-sm text-gray-500 mt-0.5">Upload Decagon CSV â Auto-analyze â Publish to Confluence</p>
+                                <h1 className="text-2xl font-bold text-gray-900">Perpay -  Weekly Product Decagon Insights</h1>
+                                <p className="text-sm text-gray-500 mt-0.5">Upload Decagon CSV > Auto-analyze > Publish to Confluence</p>
                             </div>
                         </div>
                     </div>
@@ -699,7 +699,7 @@
 
                 <footer className="bg-white border-t border-gray-200 mt-12">
                     <div className="max-w-7xl mx-auto px-6 py-5 text-center text-sm text-gray-400">
-                        Perpay â Weekly Product Decagon Insights Tool
+                        Perpay -  Weekly Product Decagon Insights Tool
                     </div>
                 </footer>
             </div>
