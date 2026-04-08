@@ -478,6 +478,78 @@
     };
 
     // --- By Product Area Tab --------------------------------------------------
+    const STOP_WORDS = ['about','after','their','there','these','would','could','should','being','through','where','which','while','other','because','still','customer','perpay','account','order','issue','help','need','trying','asked','agent','want','just','have','been','with','they','that','this','from','were','what','when','will','your','than','them','then','each','make','like','does','into','over','also'];
+
+    const deriveTopIssues = (areaConvs) => {
+      if (areaConvs.length === 0) return [];
+
+      // Extract significant phrases (bigrams) from summaries
+      const phraseCounts = {};
+      areaConvs.forEach(c => {
+        const words = (c['Summary'] || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
+        const seen = new Set();
+        // Use significant single keywords
+        words.forEach(w => {
+          if (!seen.has(w)) {
+            phraseCounts[w] = (phraseCounts[w] || 0) + 1;
+            seen.add(w);
+          }
+        });
+      });
+
+      // Get top keywords
+      const topKws = Object.entries(phraseCounts)
+        .filter(([kw, count]) => count >= 3)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([kw]) => kw);
+
+      // Group conversations by best-matching keyword cluster
+      const groups = [];
+      const assigned = new Set();
+
+      topKws.forEach(kw => {
+        if (groups.length >= 5) return;
+        const matching = areaConvs.filter((c, idx) => {
+          if (assigned.has(idx)) return false;
+          return (c['Summary'] || '').toLowerCase().includes(kw);
+        });
+        if (matching.length < 2) return;
+
+        // Mark as assigned
+        matching.forEach(c => {
+          const idx = areaConvs.indexOf(c);
+          assigned.add(idx);
+        });
+
+        // Get all customer feedback quotes
+        const quotes = matching
+          .filter(c => (c['Customer Feedback'] || '').trim().length > 10)
+          .map(c => c['Customer Feedback'].trim());
+
+        const escalated = matching.filter(c => c['Undeflected'] === 'True').length;
+        const escalatedPct = Math.round((escalated / matching.length) * 100);
+
+        // Build a title from the keyword + context
+        const sampleSummary = matching[0]['Summary'] || '';
+        const title = sampleSummary.length > 80 ? sampleSummary.substring(0, 77) + '...' : sampleSummary;
+
+        groups.push({
+          theme: title,
+          keyword: kw,
+          count: matching.length,
+          escalated,
+          escalatedPct,
+          severity: escalatedPct > 50 ? 'Critical' : escalatedPct > 30 ? 'High' : escalatedPct > 15 ? 'Medium' : 'Low',
+          quotes: quotes.slice(0, 5),
+          summaries: matching.slice(0, 3).map(c => c['Summary'] || ''),
+          conversations: matching
+        });
+      });
+
+      return groups.sort((a, b) => b.count - a.count).slice(0, 3);
+    };
+
     const ConversationsTab = ({ conversations, insightsData }) => {
       const [activeArea, setActiveArea] = useState('Card');
 
@@ -486,127 +558,146 @@
       }
 
       const areas = ['Card', 'Marketplace', 'Perpay+', 'General'];
-      const areaConfig = {
-        'Card': { color: '#2563eb', bg: 'bg-blue-600', label: 'Card', icon: 'CC' },
-        'Marketplace': { color: '#16a34a', bg: 'bg-green-600', label: 'Marketplace', icon: 'MK' },
-        'Perpay+': { color: '#9333ea', bg: 'bg-purple-600', label: 'Perpay+', icon: 'P+' },
-        'General': { color: '#475569', bg: 'bg-slate-600', label: 'General / Core', icon: 'GN' }
+      const areaColors = {
+        'Card': '#2563eb',
+        'Marketplace': '#16a34a',
+        'Perpay+': '#9333ea',
+        'General': '#475569'
       };
-
       const sevColors = { 'Critical': '#dc2626', 'High': '#ea580c', 'Medium': '#d97706', 'Low': '#16a34a' };
-      const sevBg = { 'Critical': 'bg-red-600', 'High': 'bg-orange-500', 'Medium': 'bg-amber-500', 'Low': 'bg-green-500' };
 
-      // Count convos per area
-      const areaCounts = {};
-      areas.forEach(a => { areaCounts[a] = 0; });
+      // Group conversations by area
+      const areaConvMap = {};
+      areas.forEach(a => { areaConvMap[a] = []; });
       conversations.forEach(c => {
-        const a = deriveProductArea(c['Tags'] || c.Tags);
-        areaCounts[a] = (areaCounts[a] || 0) + 1;
+        const a = deriveProductArea(c['Tags'] || c.Tags || '');
+        if (areaConvMap[a]) areaConvMap[a].push(c);
+        else areaConvMap['General'].push(c);
       });
 
-      // Get themes for active area from insights
+      // Get AI themes for this area (if analysis has been run)
       const allThemes = insightsData?.themes || [];
-      const areaThemes = allThemes.filter(t => (t.productArea || 'General') === activeArea);
+      const aiThemesForArea = allThemes.filter(t => (t.productArea || 'General') === activeArea);
 
-      // For each theme, find matching conversations and pull real quotes
-      const enrichedCards = areaThemes.map(theme => {
-        const kws = (theme.theme || '').toLowerCase().split(/[\s\/]+/).filter(w => w.length > 3);
-        const areaConvs = conversations.filter(c => deriveProductArea(c['Tags'] || c.Tags) === activeArea);
-        const matched = areaConvs.filter(c => {
-          const sum = ((c['Summary'] || '') + ' ' + (c['Tags'] || '')).toLowerCase();
-          return kws.some(kw => sum.includes(kw));
-        });
-        const signals = matched
-          .filter(c => (c['Customer Feedback'] || '').trim().length > 10)
-          .slice(0, 3)
-          .map(c => c['Customer Feedback'].trim());
-        const count = matched.length || theme.conversationCount || 0;
-        const escalated = matched.filter(c => c['Undeflected'] === 'True').length;
-        const freq = count > 300 ? 'HIGH' : count > 100 ? 'MED' : 'LOW';
+      // Derive top 3 issues from CSV data
+      const csvIssues = deriveTopIssues(areaConvMap[activeArea]);
 
-        return { ...theme, signals, matchedCount: count, escalated, freq };
-      });
+      // Merge: AI themes first (enriched with CSV quotes), then CSV-derived issues
+      const buildCards = () => {
+        const cards = [];
+        const usedConvIdxs = new Set();
 
-      // If no AI themes for this area, derive from top conversations
-      const fallbackCards = [];
-      if (enrichedCards.length === 0) {
-        const areaConvs = conversations.filter(c => deriveProductArea(c['Tags'] || c.Tags) === activeArea);
-        const flagged = areaConvs.filter(c => isFlagged(c)).slice(0, 3);
-        flagged.forEach((c, i) => {
-          fallbackCards.push({
-            theme: (c['Summary'] || 'Issue ' + (i+1)).substring(0, 60),
-            severity: c['Undeflected'] === 'True' ? 'High' : 'Medium',
-            summary: c['Summary'] || '',
-            signals: (c['Customer Feedback'] || '').trim() ? [c['Customer Feedback'].trim()] : [],
-            matchedCount: 1,
-            freq: 'LOW',
-            opportunity: '',
-            impact: '',
-            rootCause: '',
-            recommendations: []
+        // Add AI themes enriched with real quotes
+        aiThemesForArea.forEach(theme => {
+          const kws = (theme.theme || '').toLowerCase().split(/[\s\/]+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
+          const areaConvs = areaConvMap[activeArea];
+          const matched = areaConvs.filter(c => {
+            const sum = (c['Summary'] || '').toLowerCase();
+            return kws.some(kw => sum.includes(kw));
+          });
+          matched.forEach(c => usedConvIdxs.add(areaConvs.indexOf(c)));
+
+          const quotes = matched
+            .filter(c => (c['Customer Feedback'] || '').trim().length > 10)
+            .slice(0, 5)
+            .map(c => c['Customer Feedback'].trim());
+          const existingSignals = Array.isArray(theme.customerSignals) ? theme.customerSignals : [];
+          const allQuotes = [...new Set([...quotes, ...existingSignals])].slice(0, 5);
+
+          cards.push({
+            theme: theme.theme,
+            count: matched.length || theme.conversationCount || 0,
+            severity: theme.severity || 'Medium',
+            summary: theme.summary || '',
+            quotes: allQuotes,
+            impact: theme.impact || '',
+            rootCause: theme.rootCause || '',
+            opportunity: theme.opportunity || '',
+            isAI: true
           });
         });
-      }
 
-      const cards = enrichedCards.length > 0 ? enrichedCards : fallbackCards;
-      const cfg = areaConfig[activeArea] || areaConfig['General'];
-      const areaCount = areaCounts[activeArea] || 0;
+        // Fill remaining slots with CSV-derived issues
+        csvIssues.forEach(issue => {
+          if (cards.length >= 3) return;
+          // Skip if too similar to existing AI theme
+          const isDuplicate = cards.some(c => {
+            const cWords = c.theme.toLowerCase().split(/\s+/);
+            return cWords.some(w => w.length > 4 && issue.keyword && issue.keyword.includes(w));
+          });
+          if (isDuplicate) return;
+
+          cards.push({
+            theme: issue.theme,
+            count: issue.count,
+            severity: issue.severity,
+            summary: issue.summaries.join(' | '),
+            quotes: issue.quotes,
+            impact: issue.escalated + ' of ' + issue.count + ' conversations (' + issue.escalatedPct + '%) required human escalation.',
+            rootCause: '',
+            opportunity: '',
+            isAI: false
+          });
+        });
+
+        return cards.slice(0, 3);
+      };
+
+      const cards = buildCards();
+      const areaCount = areaConvMap[activeArea].length;
+      const areaColor = areaColors[activeArea] || '#475569';
 
       return (
         <div className="fade-in">
           {/* Area Tabs */}
           <div className="flex gap-0 border-b border-gray-200 mb-6 overflow-x-auto">
             {areas.map(area => {
-              const ac = areaConfig[area];
-              const count = areaCounts[area] || 0;
-              const themeCount = allThemes.filter(t => (t.productArea || 'General') === area).length;
+              const count = areaConvMap[area].length;
               return (
                 <button
                   key={area}
                   onClick={() => setActiveArea(area)}
-                  className={"px-5 py-3 text-sm font-semibold border-b-2 transition whitespace-nowrap " + (activeArea === area ? 'border-current' : 'border-transparent text-gray-400 hover:text-gray-600')}
-                  style={activeArea === area ? { color: ac.color, borderColor: ac.color } : {}}
+                  className={"px-5 py-3 text-sm font-semibold border-b-3 transition whitespace-nowrap " + (activeArea === area ? '' : 'border-transparent text-gray-400 hover:text-gray-600')}
+                  style={activeArea === area ? { color: areaColors[area], borderBottom: '3px solid ' + areaColors[area] } : { borderBottom: '3px solid transparent' }}
                 >
-                  {ac.icon} {area}
-                  {themeCount > 0 && <span className="ml-1.5 bg-gray-200 text-gray-600 text-xs px-1.5 py-0.5 rounded-full">{themeCount}</span>}
+                  {area} <span className="text-xs font-normal text-gray-400 ml-1">({count.toLocaleString()})</span>
                 </button>
               );
             })}
           </div>
 
           {/* Area Header */}
-          <div className="rounded-xl p-6 mb-6 text-white" style={{ backgroundColor: cfg.color }}>
-            <h2 className="text-2xl font-bold mb-1">{cfg.label} - Product Insights</h2>
-            <p className="text-sm opacity-80">{areaCount.toLocaleString()} {cfg.label}-tagged conversations</p>
+          <div className="rounded-xl p-6 mb-6 text-white" style={{ backgroundColor: areaColor }}>
+            <h2 className="text-2xl font-bold mb-1">{activeArea} - Product Insights</h2>
+            <p className="text-sm opacity-80">{areaCount.toLocaleString()} {activeArea}-tagged conversations</p>
           </div>
 
           {/* Issue Cards */}
           {cards.length === 0 ? (
             <div className="text-center py-12 bg-white rounded-xl shadow-sm">
-              <p className="text-gray-400">No friction themes detected for {activeArea} this week</p>
+              <p className="text-gray-400">No significant issue patterns found for {activeArea}. Try uploading a larger dataset.</p>
             </div>
           ) : (
             <div className="space-y-6">
               {cards.map((card, idx) => {
                 const sev = card.severity || 'Medium';
                 const headerBg = sevColors[sev] || '#d97706';
-                const signals = card.signals || card.customerSignals || [];
-                const recs = card.recommendations || [];
-                const opp = card.opportunity || '';
+                const freq = card.count > 300 ? 'HIGH' : card.count > 100 ? 'MED' : 'LOW';
+                const retRisk = sev === 'Critical' || sev === 'High' ? 'HIGH' : 'MEDIUM';
 
                 return (
                   <div key={idx} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     {/* Issue Title Header */}
                     <div className="px-6 py-4 flex items-center justify-between" style={{ backgroundColor: headerBg }}>
-                      <h3 className="text-white font-bold text-lg">{card.theme}</h3>
-                      <span className="bg-white bg-opacity-20 text-white text-xs font-bold px-3 py-1 rounded uppercase">{sev}</span>
+                      <h3 className="text-white font-bold text-lg flex-1 mr-4">{card.theme}</h3>
+                      <span className="bg-white bg-opacity-20 text-white text-xs font-bold px-3 py-1 rounded uppercase flex-shrink-0">{sev}</span>
                     </div>
 
                     {/* Metadata Row */}
                     <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex flex-wrap gap-4 text-sm">
                       <span><strong>Product:</strong> {activeArea}</span>
-                      <span><strong>Frequency:</strong> <span className={"text-xs font-bold px-2 py-0.5 rounded " + (card.freq === 'HIGH' ? 'bg-green-100 text-green-700' : card.freq === 'MED' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700')}>{card.freq} - {(card.matchedCount || 0).toLocaleString()} CONVOS</span></span>
-                      <span><strong>Retention Risk:</strong> <span className={"text-xs font-bold px-2 py-0.5 rounded " + (sev === 'Critical' || sev === 'High' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700')}>{sev === 'Critical' || sev === 'High' ? 'HIGH' : 'MEDIUM'}</span></span>
+                      <span><strong>Frequency:</strong> <span className={"text-xs font-bold px-2 py-0.5 rounded " + (freq === 'HIGH' ? 'bg-green-100 text-green-700' : freq === 'MED' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700')}>{freq} - {card.count.toLocaleString()} CONVOS</span></span>
+                      <span><strong>Retention Risk:</strong> <span className={"text-xs font-bold px-2 py-0.5 rounded " + (retRisk === 'HIGH' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700')}>{retRisk}</span></span>
                     </div>
 
                     <div className="p-6 space-y-6">
@@ -616,14 +707,14 @@
                         <p className="text-sm text-gray-800 leading-relaxed">{card.summary}</p>
                       </div>
 
-                      {/* Customer Signals */}
-                      {signals.length > 0 && (
+                      {/* Customer Signals (Verbatim) */}
+                      {card.quotes.length > 0 && (
                         <div>
                           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Customer Signals (Verbatim)</p>
                           <div className="space-y-2">
-                            {signals.map((sig, i) => (
+                            {card.quotes.map((q, i) => (
                               <div key={i} className="border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-gray-700 italic leading-relaxed">
-                                "{sig}"
+                                "{q}"
                               </div>
                             ))}
                           </div>
@@ -649,14 +740,11 @@
                       )}
 
                       {/* Opportunity / Recommendation */}
-                      {(opp || recs.length > 0) && (
+                      {card.opportunity && (
                         <div>
                           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Opportunity / Recommendation</p>
                           <div className="border-l-4 border-green-400 bg-green-50 px-5 py-4 rounded-r-lg">
-                            {opp && <p className="text-sm text-gray-800 leading-relaxed mb-1">1. {opp}</p>}
-                            {recs.filter(r => r !== opp).map((rec, i) => (
-                              <p key={i} className="text-sm text-gray-800 leading-relaxed">{i + 2}. {rec}</p>
-                            ))}
+                            <p className="text-sm text-gray-800 leading-relaxed">1. {card.opportunity}</p>
                           </div>
                         </div>
                       )}
