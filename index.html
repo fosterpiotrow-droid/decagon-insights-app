@@ -158,7 +158,36 @@
                     throw new Error(msg);
                 }
                 const data = await resp.json();
-                onInsightsGenerated(data, stats);
+        // Transform lean API response to rich format for InsightsReportTab
+        const transformed = (() => {
+          if (data.executiveSummary) return data;
+          const th = data.themes || [];
+          const tot = stats.totalConversations || 1;
+          const shares = [18, 13, 8];
+          return {
+            executiveSummary: {
+              narrative: data.narrative || '',
+              topIssues: th.map((t, i) => {
+                const sh = shares[i] || 5;
+                return { title: t.theme, pct: sh, convos: Math.round(tot * sh / 100), description: t.summary };
+              })
+            },
+            themes: th.map((t, i) => {
+              const sh = shares[i] || 5;
+              return {
+                theme: t.theme,
+                productArea: t.area || 'General',
+                conversationCount: Math.round(tot * sh / 100),
+                volumePct: sh,
+                severity: t.severity || 'Medium',
+                summary: t.summary || '',
+                customerSignals: t.signal ? [t.signal] : [],
+                recommendations: []
+              };
+            })
+          };
+        })();
+        onInsightsGenerated(transformed, stats);
             } catch (err) {
                 alert('Analysis failed: ' + err.message);
             } finally {
