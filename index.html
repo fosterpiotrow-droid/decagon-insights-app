@@ -796,24 +796,19 @@
                       )}
 
                       {/* Opportunity / Recommendation */}
-                      {(card.recommendations && card.recommendations.length > 0) ? (
+                      {((card.recommendations && card.recommendations.length > 0) || card.opportunity) && (
                         <div>
                           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Opportunity / Recommendation</p>
                           <div className="border-l-4 border-green-400 bg-green-50 px-5 py-4 rounded-r-lg">
-                            {card.recommendations.map((rec, ri) => (
-                              <p key={ri} className="text-sm text-gray-800 leading-relaxed mb-1 last:mb-0">{ri + 1}. {rec}</p>
-                            ))}
+                            {card.recommendations && card.recommendations.length > 0
+                              ? card.recommendations.map((rec, ri) => (
+                                  <p key={ri} className="text-sm text-gray-800 leading-relaxed mb-1 last:mb-0">{ri + 1}. {rec}</p>
+                                ))
+                              : <p className="text-sm text-gray-800 leading-relaxed">1. {card.opportunity}</p>
+                            }
                           </div>
                         </div>
-                      ) : card.opportunity && (
-                        <div>
-                          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Opportunity / Recommendation</p>
-                          <div className="border-l-4 border-green-400 bg-green-50 px-5 py-4 rounded-r-lg">
-                            <p className="text-sm text-gray-800 leading-relaxed">1. {card.opportunity}</p>
-                          </div>
-                        </div>
-                      )};
-              })}
+                      )}}
             </div>
           )}
         </div>
