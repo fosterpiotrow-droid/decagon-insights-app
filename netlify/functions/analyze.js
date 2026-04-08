@@ -2,19 +2,6 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const FRUSTRATION_KEYWORDS = ['frustrated','close account','cancel','refund','not working','broken',
-  'disappointed','angry','worst','scam','stolen','unauthorized',
-  'never received','still waiting','ridiculous','unacceptable','misleading','confused'];
-
-function scoreConversation(c) {
-  let score = 0;
-  if (c.undeflected === 'True' || c.undeflected === true) score += 10;
-  const summary = (c.summary || '').toLowerCase();
-  FRUSTRATION_KEYWORDS.forEach(kw => { if (summary.includes(kw)) score += 3; });
-  if (c.customerFeedback && c.customerFeedback.trim().length > 10) score += 5;
-  return score;
-}
-
 function classifyArea(tags) {
   if (!tags) return 'General';
   const t = tags.toLowerCase();
@@ -28,11 +15,7 @@ export default async function handler(req, context) {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
-      }
+      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }
     });
   }
 
@@ -40,84 +23,67 @@ export default async function handler(req, context) {
   try { body = await req.json(); }
   catch(e) {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
   }
 
   const { conversations = [], totalConversations = 0, undeflectedCount = 0 } = body;
-
   if (!conversations.length) {
     return new Response(JSON.stringify({ error: 'No conversations provided' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      status: 400, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
   }
 
-  // Sample top 2 per area (8 total max) for speed
-  const byArea = { Card: [], 'Perpay+': [], Marketplace: [], General: [] };
-  for (const conv of conversations) {
-    const area = classifyArea(conv.tags);
-    (byArea[area] || byArea.General).push(conv);
-  }
-  const sampled = [];
-  for (const convs of Object.values(byArea)) {
-    const sorted = [...convs].sort((a, b) => scoreConversation(b) - scoreConversation(a));
-    sampled.push(...sorted.slice(0, 2));
-  }
-
+  // Client already scored & sorted â just take first 10
+  const sampled = conversations.slice(0, 10);
   const total = totalConversations || conversations.length;
-  const undeflectedPct = total > 0 ? Math.round((undeflectedCount / total) * 100) : 0;
+  const undPct = total > 0 ? Math.round((undeflectedCount / total) * 100) : 0;
 
-  const convText = sampled.map((c, i) =>
-    `[${i+1}] ${classifyArea(c.tags)} | undeflected:${c.undeflected} | ${(c.summary||'').substring(0,120)} | feedback:${(c.customerFeedback||'none').substring(0,80)}`
+  const lines = sampled.map((c, i) =>
+    `${i+1}. [${classifyArea(c.tags)}] ${(c.summary||'').substring(0,100)}${c.undeflected==='True'?' [ESCALATED]':''}${c.customerFeedback?' | "'+c.customerFeedback.substring(0,60)+'"':''}`
   ).join('\n');
 
-  const prompt = `Perpay product analyst. ${sampled.length} sample convos from ${total} total (${undeflectedPct}% undeflected):
+  const prompt = `Perpay product analyst. Analyze ${sampled.length} top-priority support convos (from ${total} total, ${undPct}% undeflected):
+${lines}
 
-${convText}
-
-Return JSON only:
-{"executiveSummary":{"topIssues":[{"title":"string","pct":0.0,"convos":0,"description":"string"}],"narrative":"Start: The dominant story this week is **Theme** â X convos (Y%). Include undeflection rate and key areas."},"themes":[{"theme":"string","productArea":"Card|Marketplace|Perpay+|Core","conversationCount":0,"volumePct":0.0,"severity":"Critical|High|Medium|Low","summary":"2-3 sentences","customerSignals":["quote from data"],"recommendations":["fix"]}]}
-
-Rules: 3-4 topIssues, 4-6 themes sorted CriticalâLow. Counts realistic vs ${total} total. Pull customer quotes from summaries above. JSON only.`;
+JSON only. 3 topIssues, 4 themes max:
+{"executiveSummary":{"topIssues":[{"title":"str","pct":0,"convos":0,"description":"str"}],"narrative":"The dominant story this week is **X** â N convos (P%). ${undPct}% undeflected..."},"themes":[{"theme":"str","productArea":"Card|Marketplace|Perpay+|Core","conversationCount":0,"volumePct":0,"severity":"Critical|High|Medium|Low","summary":"str","customerSignals":["quote"],"recommendations":["fix"]}]}
+Counts must be realistic fractions of ${total}. customerSignals from data above. JSON only, no markdown fences.`;
 
   let isTimeout = false;
-  const timeoutId = setTimeout(() => { isTimeout = true; }, 8500);
+  const tid = setTimeout(() => { isTimeout = true; }, 8000);
 
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 800,
+      max_tokens: 500,
       messages: [
         { role: 'user', content: prompt },
         { role: 'assistant', content: '{' }
       ]
     });
 
-    clearTimeout(timeoutId);
+    clearTimeout(tid);
     if (isTimeout) throw new Error('timeout');
 
     let raw = '{' + (response.content[0]?.text || '');
-    const lastBrace = raw.lastIndexOf('}');
-    if (lastBrace !== -1) raw = raw.substring(0, lastBrace + 1);
+    const lb = raw.lastIndexOf('}');
+    if (lb !== -1) raw = raw.substring(0, lb + 1);
 
     let result;
-    try {
-      result = JSON.parse(raw);
-    } catch(e) {
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (match) result = JSON.parse(match[0]);
-      else throw new Error('Failed to parse AI response as JSON');
+    try { result = JSON.parse(raw); }
+    catch(e) {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) result = JSON.parse(m[0]);
+      else throw new Error('Failed to parse AI response');
     }
 
     return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
     });
 
   } catch(err) {
-    clearTimeout(timeoutId);
+    clearTimeout(tid);
     return new Response(JSON.stringify({
       error: isTimeout ? 'Analysis timed out â please try again' : (err.message || 'Internal error'),
     }), {
