@@ -6,12 +6,12 @@
 function validateEnvVars() {
   const required = ['CONFLUENCE_DOMAIN', 'CONFLUENCE_EMAIL', 'CONFLUENCE_API_TOKEN'];
   const missing = required.filter(v => !process.env[v]);
-  if (missing.length > 0) throw new Error(`Missing env vars: ${missing.join(', ')}`);
+  if (missing.length > 0) throw new Error('Missing env vars: ' + missing.join(', '));
 }
 
 function getAuthHeader() {
-  const creds = `${process.env.CONFLUENCE_EMAIL}:${process.env.CONFLUENCE_API_TOKEN}`;
-  return `Basic ${Buffer.from(creds).toString('base64')}`;
+  const creds = process.env.CONFLUENCE_EMAIL + ':' + process.env.CONFLUENCE_API_TOKEN;
+  return 'Basic ' + Buffer.from(creds).toString('base64');
 }
 
 function esc(text) {
@@ -26,7 +26,6 @@ function sevColor(s) {
   return '#6B7280';
 }
 
-// Build Confluence page HTML from new format: { executiveSummary, themes }
 function buildPage(insights, csvStats) {
   const { executiveSummary = {}, themes = [] } = insights;
   const { topIssues = [], narrative = '' } = executiveSummary;
@@ -36,71 +35,66 @@ function buildPage(insights, csvStats) {
 
   let html = '';
 
-  // Header
-  html += `<ac:structured-macro ac:name="info"><ac:rich-text-body>
-<p><strong>Weekly Decagon Insights</strong> â ${esc(dateRange)} | Published ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-<p>${total} conversations analyzed | ${undPct}% undeflected rate</p>
-</ac:rich-text-body></ac:structured-macro>`;
+  html += '<ac:structured-macro ac:name="info"><ac:rich-text-body>';
+  html += '<p><strong>Weekly Decagon Insights</strong> -- ' + esc(dateRange) + ' | Published ' + new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) + '</p>';
+  html += '<p>' + total + ' conversations analyzed | ' + undPct + '% undeflected rate</p>';
+  html += '</ac:rich-text-body></ac:structured-macro>';
 
-  // Executive Summary
   if (narrative) {
-    html += `<h2>Executive Summary</h2>`;
-    // Convert **bold** markdown to <strong>
+    html += '<h2>Executive Summary</h2>';
     const narHtml = esc(narrative).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    html += `<p>${narHtml}</p>`;
+    html += '<p>' + narHtml + '</p>';
   }
 
-  // Top Issues table
   if (topIssues.length > 0) {
-    html += `<h2>Top Issues</h2><table><thead><tr><th>#</th><th>Issue</th><th>Volume</th><th>Description</th></tr></thead><tbody>`;
+    html += '<h2>Top Issues</h2><table><thead><tr><th>#</th><th>Issue</th><th>Volume</th><th>Description</th></tr></thead><tbody>';
     topIssues.forEach((issue, i) => {
-      html += `<tr><td>${i+1}</td><td><strong>${esc(issue.title)}</strong></td><td>${issue.convos || 0} (${issue.pct || 0}%)</td><td>${esc(issue.description)}</td></tr>`;
+      html += '<tr><td>' + (i+1) + '</td><td><strong>' + esc(issue.title) + '</strong></td><td>' + (issue.convos || 0) + ' (' + (issue.pct || 0) + '%)</td><td>' + esc(issue.description) + '</td></tr>';
     });
-    html += `</tbody></table>`;
+    html += '</tbody></table>';
   }
 
-  // Friction Themes
   if (themes.length > 0) {
-    html += `<h2>Friction Themes</h2>`;
+    html += '<h2>Friction Themes</h2>';
     themes.forEach((theme, i) => {
-      html += `<ac:structured-macro ac:name="expand">
-<ac:parameter ac:name="title">${i+1}. [${esc(theme.productArea)}] ${esc(theme.theme)} â <span style="color:${sevColor(theme.severity)}">${esc(theme.severity)}</span> | ${theme.conversationCount || 0} convos (${theme.volumePct || 0}%)</ac:parameter>
-<ac:rich-text-body>
-<p>${esc(theme.summary)}</p>`;
+      html += '<ac:structured-macro ac:name="expand">';
+      html += '<ac:parameter ac:name="title">' + (i+1) + '. [' + esc(theme.productArea) + '] ' + esc(theme.theme) + ' -- ' + esc(theme.severity) + ' | ' + (theme.conversationCount || 0) + ' convos (' + (theme.volumePct || 0) + '%)</ac:parameter>';
+      html += '<ac:rich-text-body>';
+      html += '<p>' + esc(theme.summary) + '</p>';
 
       if (theme.customerSignals && theme.customerSignals.length > 0) {
-        html += `<p><strong>Customer Signals:</strong></p>`;
+        html += '<p><strong>Customer Signals:</strong></p>';
         theme.customerSignals.forEach(sig => {
-          html += `<blockquote><em>"${esc(sig)}"</em></blockquote>`;
+          html += '<blockquote><em>"' + esc(sig) + '"</em></blockquote>';
         });
       }
 
       if (theme.recommendations && theme.recommendations.length > 0) {
-        html += `<p><strong>Recommendations:</strong></p><ul>`;
-        theme.recommendations.forEach(rec => { html += `<li>${esc(rec)}</li>`; });
-        html += `</ul>`;
+        html += '<p><strong>Recommendations:</strong></p><ul>';
+        theme.recommendations.forEach(rec => { html += '<li>' + esc(rec) + '</li>'; });
+        html += '</ul>';
       }
 
-      html += `</ac:rich-text-body></ac:structured-macro>`;
+      html += '</ac:rich-text-body></ac:structured-macro>';
     });
   }
 
-  html += `<hr /><p style="color:#9CA3AF;font-size:12px;">Auto-generated by Perpay Decagon Insights Tool. ${total} conversations scanned.</p>`;
+  html += '<hr /><p style="color:#9CA3AF;font-size:12px;">Auto-generated by Perpay Decagon Insights Tool. ' + total + ' conversations scanned.</p>';
   return html;
 }
 
 async function fetchPage(pageId) {
-  const url = `https://${process.env.CONFLUENCE_DOMAIN}/wiki/api/v2/pages/${pageId}?body-format=storage`;
+  const url = 'https://' + process.env.CONFLUENCE_DOMAIN + '/wiki/api/v2/pages/' + pageId + '?body-format=storage';
   const resp = await fetch(url, {
     method: 'GET',
     headers: { 'Authorization': getAuthHeader(), 'Accept': 'application/json' },
   });
-  if (!resp.ok) throw new Error(`Fetch page failed: ${resp.status} ${await resp.text()}`);
+  if (!resp.ok) throw new Error('Fetch page failed: ' + resp.status + ' ' + await resp.text());
   return resp.json();
 }
 
 async function updatePage(pageId, pageData, newBody) {
-  const url = `https://${process.env.CONFLUENCE_DOMAIN}/wiki/api/v2/pages/${pageId}`;
+  const url = 'https://' + process.env.CONFLUENCE_DOMAIN + '/wiki/api/v2/pages/' + pageId;
   const resp = await fetch(url, {
     method: 'PUT',
     headers: { 'Authorization': getAuthHeader(), 'Accept': 'application/json', 'Content-Type': 'application/json' },
@@ -113,11 +107,10 @@ async function updatePage(pageId, pageData, newBody) {
       body: { representation: 'storage', value: newBody },
     }),
   });
-  if (!resp.ok) throw new Error(`Update page failed: ${resp.status} ${await resp.text()}`);
+  if (!resp.ok) throw new Error('Update page failed: ' + resp.status + ' ' + await resp.text());
   return resp.json();
 }
 
-// v2 handler format
 export default async function handler(req, context) {
   const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
 
@@ -136,7 +129,7 @@ export default async function handler(req, context) {
     const currentPage = await fetchPage(pageId);
     const newBody = buildPage(insights, csvStats);
     const updated = await updatePage(pageId, currentPage, newBody);
-    const pageUrl = `https://${process.env.CONFLUENCE_DOMAIN}/wiki/spaces/PD/pages/${updated.id}`;
+    const pageUrl = 'https://' + process.env.CONFLUENCE_DOMAIN + '/wiki/spaces/PD/pages/' + updated.id;
 
     return new Response(JSON.stringify({ success: true, pageUrl, publishedAt: new Date().toISOString(), version: updated.version?.number }), { status: 200, headers });
   } catch (err) {
