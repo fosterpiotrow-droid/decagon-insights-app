@@ -570,7 +570,9 @@
           summary,
           recommendations: recs.slice(0, 3),
           rootCause: secondary.length > 0 ? 'Pattern suggests ' + bg + ' issues are linked to ' + secondary.join(' and ') + ' problems.' : '',
-          conversations: matching
+          conversations: matching,
+          quotes: quotes,
+          summary: matching.length + ' conversations about ' + title.toLowerCase() + '. ' + matching.filter(c => (c['Undeflected'] || '') === 'True').length + ' required human escalation.'
         });
       });
       return groups.sort((a, b) => b.count - a.count).slice(0, 3);
@@ -613,64 +615,79 @@
       const buildCards = () => {
         const cards = [];
         const usedQuoteTexts = new Set();
-        aiThemesForArea.forEach(theme => {
-          const themeKws = ((theme.theme || '') + ' ' + (theme.keywords || '')).toLowerCase().split(/[\s,\/]+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
-          const areaConvs = areaConvMap[activeArea];
-          const matched = areaConvs.filter(c => {
-            const sum = ((c['Summary'] || '') + ' ' + (c['Tags'] || '')).toLowerCase();
-            let hits = 0;
-            themeKws.forEach(kw => { if (sum.includes(kw)) hits++; });
-            return hits >= 1;
+        const areaConvs = areaConvMap[activeArea] || [];
+
+        // Combine AI themes and CSV-derived issues, deduplicating
+        const seenThemes = new Set();
+        const allIssues = [];
+
+        // AI themes first (richer data)
+        aiThemesForArea.forEach(t => {
+          allIssues.push({
+            theme: t.theme, count: t.conversationCount || 0, severity: t.severity || 'Medium',
+            summary: t.summary || '', impact: t.impact || '', rootCause: t.rootCause || '',
+            opportunity: t.opportunity || '', recommendations: t.recommendations || [],
+            keywords: (t.keywords || '') + ' ' + (t.theme || ''), matchedConvs: null
           });
+          (t.theme || '').toLowerCase().split(/\s+/).forEach(w => { if (w.length > 3) seenThemes.add(w); });
+        });
+
+        // CSV issues (have matched conversations)
+        csvIssues.forEach(t => {
+          const csvWords = (t.theme || '').toLowerCase().split(/\s+/);
+          const isDupe = csvWords.some(w => w.length > 3 && seenThemes.has(w));
+          if (!isDupe) {
+            allIssues.push({
+              theme: t.theme, count: t.count || 0, severity: t.severity || 'Medium',
+              summary: '', impact: '', rootCause: t.rootCause || '',
+              opportunity: '', recommendations: t.recommendations || [],
+              keywords: (t.keyword || '') + ' ' + (t.theme || ''), matchedConvs: t.conversations || []
+            });
+          }
+        });
+
+        // Sort by count descending, take top 3
+        allIssues.sort((a, b) => (b.count || 0) - (a.count || 0));
+
+        allIssues.slice(0, 3).forEach(issue => {
+          // Match conversations to this issue by keywords
+          const kws = issue.keywords.toLowerCase().split(/[\s,]+/)
+            .filter(w => w.length > 3 && !STOP_WORDS.includes(w));
+
+          const matched = issue.matchedConvs || areaConvs.filter(c => {
+            const sum = ((c['Summary'] || '') + ' ' + (c['Tags'] || '')).toLowerCase();
+            return kws.some(kw => sum.includes(kw));
+          });
+
+          // Extract up to 3 unique, real customer quotes
           const quotes = [];
           matched.forEach(c => {
             const fb = (c['Customer Feedback'] || '').trim();
-            if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 5) {
-              const fbLow = fb.toLowerCase();
-              quotes.push(fb); usedQuoteTexts.add(fb);
+            if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 3) {
+              quotes.push(fb);
+              usedQuoteTexts.add(fb);
             }
           });
-          cards.push({
-            theme: theme.theme,
-            count: matched.length || theme.conversationCount || 0,
-            severity: theme.severity || 'Medium',
-            summary: theme.summary || '',
-            quotes,
-            impact: theme.impact || '',
-            rootCause: theme.rootCause || '',
-            opportunity: theme.opportunity || '',
-            recommendations: theme.recommendations || (theme.opportunity ? [theme.opportunity] : []),
-            isAI: true
-          });
-        });
-        csvIssues.forEach(issue => {
-          if (cards.length >= 3) return;
-          const isDuplicate = cards.some(c => {
-            const cWords = c.theme.toLowerCase().split(/\s+/);
-            return cWords.some(w => w.length > 4 && issue.keyword && issue.keyword.includes(w));
-          });
-          if (isDuplicate) return;
-          const dedupedQuotes = [];
-          (issue.quotes || []).forEach(q => {
-            if (!usedQuoteTexts.has(q) && dedupedQuotes.length < 5) {
-              dedupedQuotes.push(q);
-              usedQuoteTexts.add(q);
-            }
-          });
+
+          const escalated = matched.filter(c => (c['Undeflected'] || '') === 'True').length;
+          const summaryText = issue.summary ||
+            matched.length + ' conversations about ' + issue.theme.toLowerCase() + '. ' +
+            escalated + ' (' + (matched.length > 0 ? Math.round(escalated / matched.length * 100) : 0) + '%) required human escalation.';
+
           cards.push({
             theme: issue.theme,
-            count: issue.count,
+            count: matched.length || issue.count || 0,
             severity: issue.severity,
-            summary: issue.summary || '',
-            quotes: dedupedQuotes,
-            impact: issue.escalated + ' of ' + issue.count + ' conversations (' + issue.escalatedPct + '%) required human escalation.',
-            rootCause: issue.rootCause || '',
-            opportunity: '',
+            summary: summaryText,
+            quotes: quotes,
+            impact: issue.impact || 'Increases support volume and customer friction in ' + activeArea + '.',
+            rootCause: issue.rootCause || 'Pattern detected from conversation clustering.',
+            opportunity: issue.opportunity || '',
             recommendations: issue.recommendations || [],
-            isAI: false
           });
         });
-        return cards.slice(0, 3);
+
+        return cards;
       };
 
       const cards = buildCards();
