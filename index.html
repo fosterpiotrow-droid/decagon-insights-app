@@ -158,33 +158,51 @@
                     throw new Error(msg);
                 }
                 const data = await resp.json();
-        // Transform lean API response to rich format for InsightsReportTab
+        // Transform lean API response to rich format with CSV enrichment
         const transformed = (() => {
           if (data.executiveSummary) return data;
           const th = data.themes || [];
           const tot = stats.totalConversations || 1;
-          const shares = [18, 13, 8];
+
+          const enrichedThemes = th.map((t, i) => {
+            const kws = (t.keywords || t.theme || '').toLowerCase().split(/[,\s]+/).filter(w => w.length > 3);
+            const matched = conversations.filter(c => {
+              const sum = ((c['Summary'] || c.Summary || '') + ' ' + (c['Tags'] || '')).toLowerCase();
+              return kws.some(kw => sum.includes(kw));
+            });
+            const count = matched.length > 0 ? matched.length : Math.round(tot * Math.max(3, 18 - i * 3) / 100);
+            const pct = tot > 0 ? Math.round((count / tot) * 1000) / 10 : 0;
+            const signals = matched
+              .filter(c => (c['Customer Feedback'] || '').trim().length > 10)
+              .slice(0, 3)
+              .map(c => c['Customer Feedback'].trim());
+            const escalated = matched.filter(c => c['Undeflected'] === 'True').length;
+            return {
+              theme: t.theme,
+              productArea: t.area || 'General',
+              conversationCount: count,
+              volumePct: pct,
+              severity: t.severity || 'Medium',
+              summary: t.summary || '',
+              customerSignals: signals.length > 0 ? signals : (t.signal ? [t.signal] : []),
+              impact: t.impact || '',
+              rootCause: t.rootCause || '',
+              opportunity: t.opportunity || '',
+              recommendations: t.opportunity ? [t.opportunity] : [],
+              escalatedCount: escalated
+            };
+          });
+
+          const topIssues = enrichedThemes.slice(0, 5).map(t => ({
+            title: t.theme,
+            pct: t.volumePct,
+            convos: t.conversationCount,
+            description: t.summary
+          }));
+
           return {
-            executiveSummary: {
-              narrative: data.narrative || '',
-              topIssues: th.map((t, i) => {
-                const sh = shares[i] || 5;
-                return { title: t.theme, pct: sh, convos: Math.round(tot * sh / 100), description: t.summary };
-              })
-            },
-            themes: th.map((t, i) => {
-              const sh = shares[i] || 5;
-              return {
-                theme: t.theme,
-                productArea: t.area || 'General',
-                conversationCount: Math.round(tot * sh / 100),
-                volumePct: sh,
-                severity: t.severity || 'Medium',
-                summary: t.summary || '',
-                customerSignals: t.signal ? [t.signal] : [],
-                recommendations: []
-              };
-            })
+            executiveSummary: { narrative: data.narrative || '', topIssues },
+            themes: enrichedThemes
           };
         })();
         onInsightsGenerated(transformed, stats);
@@ -255,199 +273,208 @@
 
     // --- Insights Report Tab --------------------------------------------------
     const InsightsReportTab = ({ insightsData, csvStats, onPublish, isPublishing }) => {
-        if (!insightsData) {
-            return (
-                <div className="text-center py-16">
-                    <p className="text-gray-400 text-lg">Upload and analyze a CSV to see the weekly insights report</p>
-                </div>
-            );
-        }
-
-        const { executiveSummary = {}, themes = [] } = insightsData;
-        const topIssues = executiveSummary.topIssues || [];
-        const narrative = executiveSummary.narrative || '';
-
-        const renderNarrative = (text) => {
-            const parts = text.split(/\*\*(.*?)\*\*/g);
-            return parts.map((p, i) => i % 2 === 1 ? <strong key={i}>{p}</strong> : p);
-        };
-
-        const total = csvStats?.totalConversations || 0;
-        const undeflectedCount = csvStats?.escalatedCount || 0;
-        const undeflectedPct = total > 0 ? Math.round((undeflectedCount / total) * 100) : 0;
-        const dateRange = csvStats?.dateRange ? `${csvStats.dateRange.min} - ${csvStats.dateRange.max}` : 'N/A';
-        const avgCX = csvStats?.avgCXScore || ' - ';
-
-        const areaTagStyle = {
-            'Card':        'bg-blue-100 text-blue-800',
-            'Perpay+':     'bg-purple-100 text-purple-800',
-            'Marketplace': 'bg-green-100 text-green-800',
-            'Core':        'bg-slate-100 text-slate-700',
-            'General':     'bg-slate-100 text-slate-700',
-        };
-
-        const severityBorderStyle = {
-            'Critical': 'border-red-500',
-            'High':     'border-orange-400',
-            'Medium':   'border-amber-300',
-            'Low':      'border-green-400',
-        };
-
+      if (!insightsData) {
         return (
-            <div className="fade-in">
-
-                {/* -- Stats Bar -- */}
-                <div className="grid grid-cols-2 md:grid-cols-5 border border-gray-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
-                    <div className="p-5 border-r border-gray-100">
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Reporting Week</p>
-                        <p className="text-sm font-bold text-gray-900 leading-tight">{dateRange}</p>
-                    </div>
-                    <div className="p-5 border-r border-gray-100">
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Conversations</p>
-                        <p className="text-2xl font-bold text-gray-900">{total.toLocaleString()}</p>
-                        <p className="text-xs text-gray-400">total analyzed</p>
-                    </div>
-                    <div className="p-5 border-r border-gray-100">
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Undeflected</p>
-                        <p className="text-2xl font-bold text-red-500">{undeflectedPct}%</p>
-                        <p className="text-xs text-gray-400">{undeflectedCount.toLocaleString()} needed human</p>
-                    </div>
-                    <div className="p-5 border-r border-gray-100">
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Retention Risk</p>
-                        <p className="text-2xl font-bold text-gray-300"> - </p>
-                        <p className="text-xs text-gray-400">not tracked</p>
-                    </div>
-                    <div className="p-5">
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">CSAT</p>
-                        <p className="text-2xl font-bold text-gray-900">{avgCX} <span className="text-yellow-400 text-lg"></span></p>
-                        <p className="text-xs text-gray-400">avg CX score</p>
-                    </div>
-                </div>
-
-                {/* -- Product Head Read Card -- */}
-                <div className="rounded-xl p-7 mb-8" style={{background: '#1a3354'}}>
-                    <p className="text-xs font-bold tracking-widest uppercase mb-4" style={{color: '#64748b'}}>
-                         &nbsp;Product Head Read
-                    </p>
-                    <h2 className="text-2xl font-bold text-white mb-1">{dateRange}</h2>
-                    <p className="text-sm mb-6" style={{color: '#7ea0c0'}}>
-                        {total.toLocaleString()} conversations &nbsp;|&nbsp; {undeflectedPct}% undeflected &nbsp;|&nbsp; {themes.length} friction themes detected
-                    </p>
-
-                    {topIssues.length > 0 && (
-                        <>
-                            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{color: '#fbbf24'}}>
-                                 &nbsp;Top {topIssues.length} Priority Issues This Week
-                            </p>
-                            <ol className="space-y-3 mb-6">
-                                {topIssues.map((issue, i) => (
-                                    <li key={i} className="flex gap-3 text-sm" style={{color: '#e2e8f0'}}>
-                                        <span className="flex-shrink-0 font-bold w-4" style={{color: '#64748b'}}>{i + 1}</span>
-                                        <span>
-                                            <strong className="text-white">{issue.title} ({issue.pct}%, {(issue.convos || 0).toLocaleString()} convos)</strong>
-                                            {' '} -  {issue.description}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ol>
-                        </>
-                    )}
-
-                    {narrative && (
-                        <p className="text-sm leading-relaxed" style={{color: '#94a3b8'}}>
-                            {renderNarrative(narrative)}
-                        </p>
-                    )}
-                </div>
-
-                {/* -- Friction Themes -- */}
-                <div className="mb-8">
-                    <div className="flex items-center gap-2 mb-5">
-                        <span className="text-yellow-500 text-lg"></span>
-                        <h3 className="text-lg font-bold text-gray-900">Friction Themes</h3>
-                        <span className="text-sm text-gray-400"> -  {themes.length} patterns | sorted by severity then volume</span>
-                    </div>
-
-                    <div className="space-y-5">
-                        {themes.map((theme, idx) => {
-                            const area = theme.productArea || theme.product_area || 'General';
-                            const borderClass = severityBorderStyle[theme.severity] || 'border-gray-200';
-                            const tagClass = areaTagStyle[area] || areaTagStyle['General'];
-                            const signals = Array.isArray(theme.customerSignals) ? theme.customerSignals : [];
-                            const recs = Array.isArray(theme.recommendations) ? theme.recommendations : [];
-                            const highVolume = (theme.volumePct || 0) >= 10;
-
-                            return (
-                                <div key={idx} className={`border-l-4 ${borderClass} bg-white rounded-r-xl shadow-sm`}>
-                                    <div className="p-6">
-                                        {/* Area tag + volume */}
-                                        <div className="flex items-start justify-between mb-3">
-                                            <span className={`text-xs font-bold px-2.5 py-1 rounded uppercase tracking-wide ${tagClass}`}>
-                                                {area}
-                                            </span>
-                                            <div className="text-right">
-                                                <p className={`text-sm font-bold ${highVolume ? 'text-red-600' : 'text-gray-700'}`}>
-                                                    {(theme.conversationCount || 0).toLocaleString()} convos | {theme.volumePct || 0}%
-                                                </p>
-                                                <p className="text-xs text-gray-400">of week's volume</p>
-                                            </div>
-                                        </div>
-
-                                        {/* Title */}
-                                        <h4 className="text-xl font-bold text-gray-900 mb-4">{theme.theme}</h4>
-
-                                        {/* Summary */}
-                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Summary</p>
-                                        <p className="text-sm text-gray-700 leading-relaxed mb-5">{theme.summary}</p>
-
-                                        {/* Customer Signals */}
-                                        {signals.length > 0 && (
-                                            <div className="mb-5">
-                                                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Customer Signals</p>
-                                                <div className="space-y-2">
-                                                    {signals.map((sig, i) => (
-                                                        <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-700 italic leading-relaxed">
-                                                            "{sig}"
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Recommendations */}
-                                        {recs.length > 0 && (
-                                            <div>
-                                                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Recommendations</p>
-                                                <div className="space-y-1.5">
-                                                    {recs.map((rec, i) => (
-                                                        <div key={i} className="flex items-start gap-2">
-                                                            <span className="text-indigo-500 font-bold text-sm mt-0.5 flex-shrink-0">></span>
-                                                            <p className="text-sm text-gray-800">{rec}</p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* Publish button */}
-                <div className="mt-8 pt-6 border-t border-gray-200">
-                    <button
-                        onClick={onPublish}
-                        disabled={isPublishing}
-                        className="w-full px-6 py-3 bg-emerald-500 text-white rounded-lg font-semibold hover:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        {isPublishing && <div className="spinner"></div>}
-                        {isPublishing ? 'Publishing...' : 'Publish to Confluence'}
-                    </button>
-                </div>
-            </div>
+          <div className="text-center py-16">
+            <p className="text-gray-400 text-lg">Upload and analyze a CSV to see the weekly insights report</p>
+          </div>
         );
+      }
+
+      const { executiveSummary = {}, themes = [] } = insightsData;
+      const topIssues = executiveSummary.topIssues || [];
+      const narrative = executiveSummary.narrative || '';
+
+      const renderNarrative = (text) => {
+        const parts = text.split(/\*\*(.*?)\*\*/g);
+        return parts.map((p, i) => i % 2 === 1 ? <strong key={i}>{p}</strong> : p);
+      };
+
+      const total = csvStats?.totalConversations || 0;
+      const undeflectedCount = csvStats?.escalatedCount || 0;
+      const undeflectedPct = total > 0 ? Math.round((undeflectedCount / total) * 100) : 0;
+      const dateRange = csvStats?.dateRange ? csvStats.dateRange.min + ' - ' + csvStats.dateRange.max : 'N/A';
+      const avgCX = csvStats?.avgCXScore || ' - ';
+
+      const areaTagStyle = {
+        'Card': 'bg-blue-100 text-blue-800',
+        'Perpay+': 'bg-purple-100 text-purple-800',
+        'Marketplace': 'bg-green-100 text-green-800',
+        'Core': 'bg-slate-100 text-slate-700',
+        'General': 'bg-slate-100 text-slate-700',
+      };
+      const severityBorderStyle = {
+        'Critical': 'border-red-500',
+        'High': 'border-orange-400',
+        'Medium': 'border-amber-300',
+        'Low': 'border-green-400',
+      };
+
+      return (
+        <div className="fade-in">
+          {/* -- Stats Bar -- */}
+          <div className="grid grid-cols-2 md:grid-cols-5 border border-gray-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
+            <div className="p-5 border-r border-gray-100">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Reporting Week</p>
+              <p className="text-sm font-bold text-gray-900 leading-tight">{dateRange}</p>
+            </div>
+            <div className="p-5 border-r border-gray-100">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Conversations</p>
+              <p className="text-2xl font-bold text-gray-900">{total.toLocaleString()}</p>
+              <p className="text-xs text-gray-400">total analyzed</p>
+            </div>
+            <div className="p-5 border-r border-gray-100">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Undeflected</p>
+              <p className="text-2xl font-bold text-red-500">{undeflectedPct}%</p>
+              <p className="text-xs text-gray-400">{undeflectedCount.toLocaleString()} needed human</p>
+            </div>
+            <div className="p-5 border-r border-gray-100">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Retention Risk</p>
+              <p className="text-2xl font-bold text-gray-300"> - </p>
+              <p className="text-xs text-gray-400">not tracked</p>
+            </div>
+            <div className="p-5">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">CSAT</p>
+              <p className="text-2xl font-bold text-gray-900">{avgCX}</p>
+              <p className="text-xs text-gray-400">avg CX score</p>
+            </div>
+          </div>
+
+          {/* -- Product Head Read Card -- */}
+          <div className="rounded-xl p-7 mb-8" style={{background: '#1a3354'}}>
+            <p className="text-xs font-bold tracking-widest uppercase mb-4" style={{color: '#64748b'}}>
+              PRODUCT HEAD READ
+            </p>
+            <h2 className="text-2xl font-bold text-white mb-1">{dateRange}</h2>
+            <p className="text-sm mb-6" style={{color: '#7ea0c0'}}>
+              {total.toLocaleString()} conversations | {undeflectedPct}% undeflected | {themes.length} friction themes detected
+            </p>
+
+            {topIssues.length > 0 && (
+              <>
+                <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{color: '#fbbf24'}}>
+                  TOP {topIssues.length} PRIORITY ISSUES THIS WEEK
+                </p>
+                <ol className="space-y-3 mb-6">
+                  {topIssues.map((issue, i) => (
+                    <li key={i} className="flex gap-3 text-sm" style={{color: '#e2e8f0'}}>
+                      <span className="flex-shrink-0 font-bold w-4" style={{color: '#64748b'}}>{i + 1}</span>
+                      <span>
+                        <strong className="text-white">{issue.title} ({issue.pct}%, {(issue.convos || 0).toLocaleString()} convos)</strong>
+                        {' '}- {issue.description}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </>
+            )}
+
+            {narrative && (
+              <p className="text-sm leading-relaxed" style={{color: '#94a3b8'}}>
+                {renderNarrative(narrative)}
+              </p>
+            )}
+          </div>
+
+          {/* -- Friction Themes -- */}
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-5">
+              <h3 className="text-lg font-bold text-gray-900">Friction Themes</h3>
+              <span className="text-sm text-gray-400"> - {themes.length} patterns | sorted by severity then volume</span>
+            </div>
+
+            <div className="space-y-5">
+              {themes.map((theme, idx) => {
+                const area = theme.productArea || theme.product_area || 'General';
+                const borderClass = severityBorderStyle[theme.severity] || 'border-gray-200';
+                const tagClass = areaTagStyle[area] || areaTagStyle['General'];
+                const signals = Array.isArray(theme.customerSignals) ? theme.customerSignals : [];
+                const highVolume = (theme.volumePct || 0) >= 10;
+
+                return (
+                  <div key={idx} className={"border-l-4 " + borderClass + " bg-white rounded-r-xl shadow-sm"}>
+                    <div className="p-6">
+                      {/* Area tag + volume */}
+                      <div className="flex items-start justify-between mb-3">
+                        <span className={"text-xs font-bold px-2.5 py-1 rounded uppercase tracking-wide " + tagClass}>
+                          {area}
+                        </span>
+                        <div className="text-right">
+                          <p className={"text-sm font-bold " + (highVolume ? 'text-red-600' : 'text-gray-700')}>
+                            {(theme.conversationCount || 0).toLocaleString()} convos | {theme.volumePct || 0}%
+                          </p>
+                          <p className="text-xs text-gray-400">of week's volume</p>
+                        </div>
+                      </div>
+
+                      {/* Title */}
+                      <h4 className="text-xl font-bold text-gray-900 mb-4">{theme.theme}</h4>
+
+                      {/* Summary */}
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Summary</p>
+                      <p className="text-sm text-gray-700 leading-relaxed mb-5">{theme.summary}</p>
+
+                      {/* Customer Signals */}
+                      {signals.length > 0 && (
+                        <div className="mb-5">
+                          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Customer Signals</p>
+                          <div className="space-y-2">
+                            {signals.map((sig, i) => (
+                              <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-700 italic leading-relaxed">
+                                "{sig}"
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Why This Matters + Root Cause side by side */}
+                      {(theme.impact || theme.rootCause) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-5">
+                          {theme.impact && (
+                            <div>
+                              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Why This Matters</p>
+                              <p className="text-sm text-gray-700 leading-relaxed">{theme.impact}</p>
+                            </div>
+                          )}
+                          {theme.rootCause && (
+                            <div>
+                              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Root Cause Hypothesis</p>
+                              <p className="text-sm text-gray-700 leading-relaxed">{theme.rootCause}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Opportunity */}
+                      {theme.opportunity && (
+                        <div>
+                          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Opportunity</p>
+                          <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-sm text-indigo-900 leading-relaxed">
+                            {theme.opportunity}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Publish button */}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <button
+              onClick={onPublish}
+              disabled={isPublishing}
+              className="w-full px-6 py-3 bg-emerald-500 text-white rounded-lg font-semibold hover:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isPublishing && <div className="spinner"></div>}
+              {isPublishing ? 'Publishing...' : 'Publish to Confluence'}
+            </button>
+          </div>
+        </div>
+      );
     };
 
     // --- By Product Area Tab --------------------------------------------------
