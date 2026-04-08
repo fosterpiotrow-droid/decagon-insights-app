@@ -177,14 +177,41 @@
               const pct = tot > 0 ? Math.round((count / tot) * 1000) / 10 : 0;
               // Theme-specific quotes: must contain a theme keyword AND not already used
               const signals = [];
-              matched.forEach(c => {
-                const fb = (c['Customer Feedback'] || '').trim();
-                if (fb.length > 10 && !usedQuoteTexts.has(fb) && signals.length < 3) {
-                  const fbLow = fb.toLowerCase();
-                  signals.push(fb); usedQuoteTexts.add(fb);
+                // Pass 1: Customer Feedback that matches theme keywords
+                matched.forEach(c => {
+                  const fb = (c['Customer Feedback'] || '').trim();
+                  if (fb.length > 10 && !usedQuoteTexts.has(fb) && signals.length < 3) {
+                    const fbLow = fb.toLowerCase();
+                    if (kws.some(kw => fbLow.includes(kw))) {
+                      signals.push(fb);
+                      usedQuoteTexts.add(fb);
+                    }
+                  }
+                });
+                // Pass 2: Any Customer Feedback from matched conversations
+                if (signals.length < 2) {
+                  matched.forEach(c => {
+                    const fb = (c['Customer Feedback'] || '').trim();
+                    if (fb.length > 10 && !usedQuoteTexts.has(fb) && signals.length < 3) {
+                      signals.push(fb);
+                      usedQuoteTexts.add(fb);
+                    }
+                  });
                 }
-              });
-              // Fallback: if no keyword-matching quotes, take first unused
+                // Pass 3: Conversation Summaries as signals if feedback is sparse
+                if (signals.length < 2) {
+                  matched.forEach(c => {
+                    const sumText = (c['Summary'] || '').trim();
+                    if (sumText.length > 20 && !usedQuoteTexts.has(sumText) && signals.length < 3) {
+                      const sumLow = sumText.toLowerCase();
+                      if (kws.some(kw => sumLow.includes(kw))) {
+                        signals.push(sumText);
+                        usedQuoteTexts.add(sumText);
+                      }
+                    }
+                  });
+                }
+                
               
               const escalated = matched.filter(c => c['Undeflected'] === 'True').length;
               return {
@@ -537,29 +564,43 @@
         // Get theme-specific quotes only (must contain a cluster keyword)
         const bgWords = bg.split(' ');
         const quotes = [];
-        matching.forEach(c => {
-          const fb = (c['Customer Feedback'] || '').trim();
-          if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 5) {
-            const fbLow = fb.toLowerCase();
-            quotes.push(fb);
-              usedQuoteTexts.add(fb);
+          // Build keyword list from title
+          const titleKws = title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          // Pass 1: Customer Feedback matching title keywords
+          matching.forEach(c => {
+            const fb = (c['Customer Feedback'] || '').trim();
+            if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 3) {
+              const fbLow = fb.toLowerCase();
+              if (titleKws.some(kw => fbLow.includes(kw))) {
+                quotes.push(fb);
+                usedQuoteTexts.add(fb);
+              }
+            }
+          });
+          // Pass 2: Any Customer Feedback from matched conversations
+          if (quotes.length < 2) {
+            matching.forEach(c => {
+              const fb = (c['Customer Feedback'] || '').trim();
+              if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 3) {
+                quotes.push(fb);
+                usedQuoteTexts.add(fb);
+              }
+            });
           }
-        });
-        // If no keyword-matching quotes, take first unused one
-        
-        const escalated = matching.filter(c => c['Undeflected'] === 'True').length;
-        const escalatedPct = Math.round((escalated / matching.length) * 100);
-        // Data-driven summary with real counts
-        const summary = matching.length + ' conversations involve ' + titleize(bg).toLowerCase() + (secondary.length > 0 ? ', with ' + Math.round(matching.length * 0.4) + ' also mentioning ' + secondary[0] : '') + '. ' + escalated + ' (' + escalatedPct + '%) required human intervention.';
-        // Generate recommendations based on patterns
-        const recs = [];
-        const allText = matching.map(c => (c['Summary'] || '').toLowerCase()).join(' ');
-        if (allText.includes('form') || allText.includes('submit') || allText.includes('error')) recs.push('Audit and fix ' + bg + '-related form flows to unblock self-service resolution.');
-        if (allText.includes('wait') || allText.includes('delay') || allText.includes('slow')) recs.push('Reduce response time for ' + bg + ' inquiries with automated status updates.');
-        if (escalatedPct > 30) recs.push('Create dedicated escalation path for ' + bg + ' issues to reduce repeat contacts.');
-        if (allText.includes('refund') || allText.includes('charge') || allText.includes('deduct')) recs.push('Auto-pause charges for accounts with active ' + bg + ' investigations.');
-        if (recs.length === 0) recs.push('Investigate root cause of ' + bg + ' pattern and implement targeted fix.');
-        groups.push({
+          // Pass 3: Conversation Summaries as signals
+          if (quotes.length < 2) {
+            matching.forEach(c => {
+              const sumText = (c['Summary'] || '').trim();
+              if (sumText.length > 20 && !usedQuoteTexts.has(sumText) && quotes.length < 3) {
+                const sumLow = sumText.toLowerCase();
+                if (titleKws.some(kw => sumLow.includes(kw))) {
+                  quotes.push(sumText);
+                  usedQuoteTexts.add(sumText);
+                }
+              }
+            });
+          }
+          groups.push({
           theme: title,
           keyword: bg,
           count: matching.length,
@@ -659,15 +700,42 @@
             return kws.some(kw => sum.includes(kw));
           });
 
-          // Extract up to 3 unique, real customer quotes
+          // Extract up to 3 relevant customer signals
           const quotes = [];
+          // Pass 1: Customer Feedback that mentions theme keywords
           matched.forEach(c => {
             const fb = (c['Customer Feedback'] || '').trim();
             if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 3) {
-              quotes.push(fb);
-              usedQuoteTexts.add(fb);
+              const fbLow = fb.toLowerCase();
+              if (kws.some(kw => fbLow.includes(kw))) {
+                quotes.push(fb);
+                usedQuoteTexts.add(fb);
+              }
             }
           });
+          // Pass 2: If not enough, use relevant Customer Feedback without keyword check
+          if (quotes.length < 2) {
+            matched.forEach(c => {
+              const fb = (c['Customer Feedback'] || '').trim();
+              if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 3) {
+                quotes.push(fb);
+                usedQuoteTexts.add(fb);
+              }
+            });
+          }
+          // Pass 3: If still not enough, use conversation Summaries as signals
+          if (quotes.length < 2) {
+            matched.forEach(c => {
+              const sumText = (c['Summary'] || '').trim();
+              if (sumText.length > 20 && !usedQuoteTexts.has(sumText) && quotes.length < 3) {
+                const sumLow = sumText.toLowerCase();
+                if (kws.some(kw => sumLow.includes(kw))) {
+                  quotes.push(sumText);
+                  usedQuoteTexts.add(sumText);
+                }
+              }
+            });
+          }
 
           const escalated = matched.filter(c => (c['Undeflected'] || '') === 'True').length;
           const summaryText = issue.summary ||
