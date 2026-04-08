@@ -38,13 +38,14 @@
     };
 
     const deriveProductArea = (tags) => {
-        if (!tags) return 'General';
-        const t = tags.toLowerCase();
-        if (t.includes('card')) return 'Card';
-        if (t.includes('perpay+') || t.includes('subscription')) return 'Perpay+';
-        if (t.includes('marketplace') || t.includes('shopping') || t.includes('order')) return 'Marketplace';
-        return 'General';
-    };
+      if (!tags) return 'General';
+      const t = (tags + '').toLowerCase();
+      if (t.includes('card') || t.includes('credit') || t.includes('visa') || t.includes('mastercard') || t.includes('debit') || t.includes('payment') || t.includes('transaction') || t.includes('balance') || t.includes('statement') || t.includes('ach') || t.includes('fraud') || t.includes('stolen') || t.includes('dispute') || t.includes('charge')) return 'Card';
+      if (t.includes('perpay+') || t.includes('subscription') || t.includes('membership') || t.includes('benefit') || t.includes('premium') || t.includes('plan')) return 'Perpay+';
+      if (t.includes('marketplace') || t.includes('shopping') || t.includes('order') || t.includes('shipping') || t.includes('delivery') || t.includes('tracking') || t.includes('package') || t.includes('return') || t.includes('refund') || t.includes('product') || t.includes('item') || t.includes('cart')) return 'Marketplace';
+      if (t.includes('verify') || t.includes('verification') || t.includes('identity') || t.includes('login') || t.includes('password') || t.includes('account') || t.includes('sign') || t.includes('locked') || t.includes('suspend')) return 'General';
+      return 'General';
+    }
 
     const isFlagged = (conv) => {
         const flags = parseWatchtowerFlags(conv['Watchtower Flags']);
@@ -483,12 +484,20 @@
     const deriveTopIssues = (areaConvs) => {
       if (areaConvs.length === 0) return [];
 
-      // Extract significant phrases (bigrams) from summaries
+      // Extract 2-word phrases from summaries to find patterns
       const phraseCounts = {};
       areaConvs.forEach(c => {
         const words = (c['Summary'] || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
         const seen = new Set();
-        // Use significant single keywords
+        // Use bigrams for better theme names
+        for (let i = 0; i < words.length - 1; i++) {
+          const bigram = words[i] + ' ' + words[i+1];
+          if (!seen.has(bigram)) {
+            phraseCounts[bigram] = (phraseCounts[bigram] || 0) + 1;
+            seen.add(bigram);
+          }
+        }
+        // Also single significant words
         words.forEach(w => {
           if (!seen.has(w)) {
             phraseCounts[w] = (phraseCounts[w] || 0) + 1;
@@ -497,52 +506,65 @@
         });
       });
 
-      // Get top keywords
-      const topKws = Object.entries(phraseCounts)
-        .filter(([kw, count]) => count >= 3)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 15)
-        .map(([kw]) => kw);
+      // Get top phrases (prefer bigrams)
+      const topPhrases = Object.entries(phraseCounts)
+        .filter(([p, count]) => count >= 3)
+        .sort((a, b) => {
+          // Prefer bigrams over single words
+          const aIsBigram = a[0].includes(' ') ? 1 : 0;
+          const bIsBigram = b[0].includes(' ') ? 1 : 0;
+          if (aIsBigram !== bIsBigram) return bIsBigram - aIsBigram;
+          return b[1] - a[1];
+        })
+        .slice(0, 20)
+        .map(([p]) => p);
 
-      // Group conversations by best-matching keyword cluster
+      // Group conversations by best-matching phrase
       const groups = [];
       const assigned = new Set();
 
-      topKws.forEach(kw => {
+      topPhrases.forEach(phrase => {
         if (groups.length >= 5) return;
+        const phraseWords = phrase.split(' ');
         const matching = areaConvs.filter((c, idx) => {
           if (assigned.has(idx)) return false;
-          return (c['Summary'] || '').toLowerCase().includes(kw);
+          const sum = (c['Summary'] || '').toLowerCase();
+          return phraseWords.every(pw => sum.includes(pw));
         });
         if (matching.length < 2) return;
 
-        // Mark as assigned
-        matching.forEach(c => {
-          const idx = areaConvs.indexOf(c);
-          assigned.add(idx);
-        });
+        matching.forEach(c => assigned.add(areaConvs.indexOf(c)));
 
-        // Get all customer feedback quotes
+        // Only get quotes from THESE matched conversations
         const quotes = matching
           .filter(c => (c['Customer Feedback'] || '').trim().length > 10)
           .map(c => c['Customer Feedback'].trim());
 
         const escalated = matching.filter(c => c['Undeflected'] === 'True').length;
-        const escalatedPct = Math.round((escalated / matching.length) * 100);
+        const escalatedPct = matching.length > 0 ? Math.round((escalated / matching.length) * 100) : 0;
 
-        // Build a title from the keyword + context
-        const sampleSummary = matching[0]['Summary'] || '';
-        const title = sampleSummary.length > 80 ? sampleSummary.substring(0, 77) + '...' : sampleSummary;
+        // Generate a concise title from the phrase
+        const titleWords = phrase.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1));
+        const title = titleWords.join(' ') + ' Issues';
+
+        // Build a summary from top 2 most representative conversations
+        const topSummaries = matching
+          .sort((a, b) => (b['Undeflected'] === 'True' ? 1 : 0) - (a['Undeflected'] === 'True' ? 1 : 0))
+          .slice(0, 2)
+          .map(c => {
+            const s = (c['Summary'] || '').trim();
+            return s.length > 120 ? s.substring(0, 117) + '...' : s;
+          });
 
         groups.push({
           theme: title,
-          keyword: kw,
+          keyword: phrase,
           count: matching.length,
           escalated,
           escalatedPct,
           severity: escalatedPct > 50 ? 'Critical' : escalatedPct > 30 ? 'High' : escalatedPct > 15 ? 'Medium' : 'Low',
           quotes: quotes.slice(0, 5),
-          summaries: matching.slice(0, 3).map(c => c['Summary'] || ''),
+          summary: topSummaries.join(' Additionally: '),
           conversations: matching
         });
       });
@@ -550,6 +572,7 @@
       return groups.sort((a, b) => b.count - a.count).slice(0, 3);
     };
 
+    
     const ConversationsTab = ({ conversations, insightsData }) => {
       const [activeArea, setActiveArea] = useState('Card');
 
