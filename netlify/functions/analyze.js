@@ -45,7 +45,7 @@ export default async function handler(req, context) {
     });
   }
 
-  const { conversations = [], dateRange = {}, totalConversations = 0, undeflectedCount = 0 } = body;
+  const { conversations = [], totalConversations = 0, undeflectedCount = 0 } = body;
 
   if (!conversations.length) {
     return new Response(JSON.stringify({ error: 'No conversations provided' }), {
@@ -54,7 +54,7 @@ export default async function handler(req, context) {
     });
   }
 
-  // Sample top 3 per area for speed
+  // Sample top 2 per area (8 total max) for speed
   const byArea = { Card: [], 'Perpay+': [], Marketplace: [], General: [] };
   for (const conv of conversations) {
     const area = classifyArea(conv.tags);
@@ -63,69 +63,32 @@ export default async function handler(req, context) {
   const sampled = [];
   for (const convs of Object.values(byArea)) {
     const sorted = [...convs].sort((a, b) => scoreConversation(b) - scoreConversation(a));
-    sampled.push(...sorted.slice(0, 3));
+    sampled.push(...sorted.slice(0, 2));
   }
 
   const total = totalConversations || conversations.length;
   const undeflectedPct = total > 0 ? Math.round((undeflectedCount / total) * 100) : 0;
 
   const convText = sampled.map((c, i) =>
-    `[${i+1}] Area: ${classifyArea(c.tags)} | Undeflected: ${c.undeflected}\nSummary: ${c.summary}\nFeedback: ${c.customerFeedback || 'none'}`
-  ).join('\n\n');
+    `[${i+1}] ${classifyArea(c.tags)} | undeflected:${c.undeflected} | ${(c.summary||'').substring(0,120)} | feedback:${(c.customerFeedback||'none').substring(0,80)}`
+  ).join('\n');
 
-  const prompt = `You are a product analyst at Perpay. Analyze these ${sampled.length} representative customer support conversations (sampled from ${total} total this week, ${undeflectedPct}% undeflected rate).
+  const prompt = `Perpay product analyst. ${sampled.length} sample convos from ${total} total (${undeflectedPct}% undeflected):
 
 ${convText}
 
-Return a JSON object with EXACTLY this structure:
-{
-  "executiveSummary": {
-    "topIssues": [
-      {
-        "title": "Short Issue Name",
-        "pct": 17.9,
-        "convos": 1428,
-        "description": "One sentence describing the customer pain point."
-      }
-    ],
-    "narrative": "2-3 sentences. Start with: The dominant story this week is **ThemeName** â touching X conversations (Y% of volume). Mention the number of critical themes, the undeflection rate (${undeflectedPct}%), and key product areas affected."
-  },
-  "themes": [
-    {
-      "theme": "Short Friction Theme Name",
-      "productArea": "Card",
-      "conversationCount": 500,
-      "volumePct": 6.3,
-      "severity": "Critical",
-      "summary": "2-3 sentences describing the friction pattern, its root cause, and customer impact.",
-      "customerSignals": [
-        "Verbatim or near-verbatim customer language from the conversation summaries above",
-        "Another customer quote"
-      ],
-      "recommendations": [
-        "Specific actionable product fix"
-      ]
-    }
-  ]
-}
+Return JSON only:
+{"executiveSummary":{"topIssues":[{"title":"string","pct":0.0,"convos":0,"description":"string"}],"narrative":"Start: The dominant story this week is **Theme** â X convos (Y%). Include undeflection rate and key areas."},"themes":[{"theme":"string","productArea":"Card|Marketplace|Perpay+|Core","conversationCount":0,"volumePct":0.0,"severity":"Critical|High|Medium|Low","summary":"2-3 sentences","customerSignals":["quote from data"],"recommendations":["fix"]}]}
 
-Rules:
-- topIssues: 3-5 items sorted by volume/impact, with realistic convos counts (must sum to roughly ${Math.round(total * 0.6)})
-- themes: 4-8 friction patterns sorted by severity (Critical â High â Medium â Low) then by volume
-- productArea values: Card | Marketplace | Perpay+ | Core (use Core for identity/account/verification issues)
-- severity values: Critical | High | Medium | Low
-- conversationCount integers, volumePct with 1 decimal; all counts should be realistic fractions of ${total}
-- customerSignals: pull language directly from the Summary/Feedback text above â these should read like real customer words
-- Use **bold** markdown ONLY inside the narrative string to highlight theme names
-- Output ONLY the JSON object, no other text`;
+Rules: 3-4 topIssues, 4-6 themes sorted CriticalâLow. Counts realistic vs ${total} total. Pull customer quotes from summaries above. JSON only.`;
 
   let isTimeout = false;
-  const timeoutId = setTimeout(() => { isTimeout = true; }, 9000);
+  const timeoutId = setTimeout(() => { isTimeout = true; }, 8500);
 
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
+      max_tokens: 800,
       messages: [
         { role: 'user', content: prompt },
         { role: 'assistant', content: '{' }
