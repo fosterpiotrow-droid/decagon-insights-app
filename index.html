@@ -161,51 +161,71 @@
                 const data = await resp.json();
         // Transform lean API response to rich format with CSV enrichment
         const transformed = (() => {
-          if (data.executiveSummary) return data;
-          const th = data.themes || [];
-          const tot = stats.totalConversations || 1;
-
-          const enrichedThemes = th.map((t, i) => {
-            const kws = (t.keywords || t.theme || '').toLowerCase().split(/[,\s]+/).filter(w => w.length > 3);
-            const matched = conversations.filter(c => {
-              const sum = ((c['Summary'] || c.Summary || '') + ' ' + (c['Tags'] || '')).toLowerCase();
-              return kws.some(kw => sum.includes(kw));
+            if (data.executiveSummary) return data;
+            const th = data.themes || [];
+            const tot = stats.totalConversations || 1;
+            const usedQuoteTexts = new Set();
+            const enrichedThemes = th.map((t, i) => {
+              const kws = (t.keywords || t.theme || '').toLowerCase().split(/[,\s]+/).filter(w => w.length > 3);
+              const matched = conversations.filter(c => {
+                const sum = ((c['Summary'] || c.Summary || '') + ' ' + (c['Tags'] || '')).toLowerCase();
+                let hits = 0;
+                kws.forEach(kw => { if (sum.includes(kw)) hits++; });
+                return hits >= Math.min(2, kws.length);
+              });
+              const count = matched.length > 0 ? matched.length : Math.round(tot * Math.max(3, 18 - i * 3) / 100);
+              const pct = tot > 0 ? Math.round((count / tot) * 1000) / 10 : 0;
+              // Theme-specific quotes: must contain a theme keyword AND not already used
+              const signals = [];
+              matched.forEach(c => {
+                const fb = (c['Customer Feedback'] || '').trim();
+                if (fb.length > 10 && !usedQuoteTexts.has(fb) && signals.length < 3) {
+                  const fbLow = fb.toLowerCase();
+                  const relevant = kws.some(kw => fbLow.includes(kw));
+                  if (relevant) {
+                    signals.push(fb);
+                    usedQuoteTexts.add(fb);
+                  }
+                }
+              });
+              // Fallback: if no keyword-matching quotes, take first unused
+              if (signals.length === 0) {
+                matched.forEach(c => {
+                  const fb = (c['Customer Feedback'] || '').trim();
+                  if (fb.length > 10 && !usedQuoteTexts.has(fb) && signals.length < 2) {
+                    signals.push(fb);
+                    usedQuoteTexts.add(fb);
+                  }
+                });
+              }
+              const escalated = matched.filter(c => c['Undeflected'] === 'True').length;
+              return {
+                theme: t.theme,
+                productArea: t.area || 'General',
+                conversationCount: count,
+                volumePct: pct,
+                severity: t.severity || 'Medium',
+                summary: t.summary || '',
+                customerSignals: signals,
+                impact: t.impact || '',
+                rootCause: t.rootCause || '',
+                opportunity: t.opportunity || '',
+                recommendations: t.opportunity ? [t.opportunity] : [],
+                escalatedCount: escalated,
+                keywords: t.keywords || ''
+              };
             });
-            const count = matched.length > 0 ? matched.length : Math.round(tot * Math.max(3, 18 - i * 3) / 100);
-            const pct = tot > 0 ? Math.round((count / tot) * 1000) / 10 : 0;
-            const signals = matched
-              .filter(c => (c['Customer Feedback'] || '').trim().length > 10)
-              .slice(0, 3)
-              .map(c => c['Customer Feedback'].trim());
-            const escalated = matched.filter(c => c['Undeflected'] === 'True').length;
+            const topIssues = enrichedThemes.slice(0, 5).map(t => ({
+              title: t.theme,
+              pct: t.volumePct,
+              convos: t.conversationCount,
+              description: t.summary
+            }));
             return {
-              theme: t.theme,
-              productArea: t.area || 'General',
-              conversationCount: count,
-              volumePct: pct,
-              severity: t.severity || 'Medium',
-              summary: t.summary || '',
-              customerSignals: signals.length > 0 ? signals : (t.signal ? [t.signal] : []),
-              impact: t.impact || '',
-              rootCause: t.rootCause || '',
-              opportunity: t.opportunity || '',
-              recommendations: t.opportunity ? [t.opportunity] : [],
-              escalatedCount: escalated
+              executiveSummary: { narrative: data.narrative || '', topIssues },
+              themes: enrichedThemes
             };
-          });
-
-          const topIssues = enrichedThemes.slice(0, 5).map(t => ({
-            title: t.theme,
-            pct: t.volumePct,
-            convos: t.conversationCount,
-            description: t.summary
-          }));
-
-          return {
-            executiveSummary: { narrative: data.narrative || '', topIssues },
-            themes: enrichedThemes
-          };
-        })();
+          })();
         onInsightsGenerated(transformed, stats);
             } catch (err) {
                 alert('Analysis failed: ' + err.message);
@@ -483,92 +503,98 @@
 
     const deriveTopIssues = (areaConvs) => {
       if (areaConvs.length === 0) return [];
-
-      // Extract 2-word phrases from summaries to find patterns
-      const phraseCounts = {};
+      // Extract bigrams from summaries for clustering
+      const bigramCounts = {};
       areaConvs.forEach(c => {
         const words = (c['Summary'] || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
         const seen = new Set();
-        // Use bigrams for better theme names
         for (let i = 0; i < words.length - 1; i++) {
-          const bigram = words[i] + ' ' + words[i+1];
-          if (!seen.has(bigram)) {
-            phraseCounts[bigram] = (phraseCounts[bigram] || 0) + 1;
-            seen.add(bigram);
-          }
+          const bg = words[i] + ' ' + words[i+1];
+          if (!seen.has(bg)) { bigramCounts[bg] = (bigramCounts[bg] || 0) + 1; seen.add(bg); }
         }
-        // Also single significant words
-        words.forEach(w => {
-          if (!seen.has(w)) {
-            phraseCounts[w] = (phraseCounts[w] || 0) + 1;
-            seen.add(w);
-          }
-        });
       });
-
-      // Get top phrases (prefer bigrams)
-      const topPhrases = Object.entries(phraseCounts)
-        .filter(([p, count]) => count >= 3)
-        .sort((a, b) => {
-          // Prefer bigrams over single words
-          const aIsBigram = a[0].includes(' ') ? 1 : 0;
-          const bIsBigram = b[0].includes(' ') ? 1 : 0;
-          if (aIsBigram !== bIsBigram) return bIsBigram - aIsBigram;
-          return b[1] - a[1];
-        })
-        .slice(0, 20)
-        .map(([p]) => p);
-
-      // Group conversations by best-matching phrase
+      const topBigrams = Object.entries(bigramCounts)
+        .filter(([, count]) => count >= 3)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 30)
+        .map(([bg]) => bg);
+      // Build clusters: each bigram groups its matching conversations
       const groups = [];
       const assigned = new Set();
-
-      topPhrases.forEach(phrase => {
+      const usedQuoteTexts = new Set();
+      topBigrams.forEach(bg => {
         if (groups.length >= 5) return;
-        const phraseWords = phrase.split(' ');
         const matching = areaConvs.filter((c, idx) => {
           if (assigned.has(idx)) return false;
-          const sum = (c['Summary'] || '').toLowerCase();
-          return phraseWords.every(pw => sum.includes(pw));
+          return (c['Summary'] || '').toLowerCase().includes(bg);
         });
         if (matching.length < 2) return;
-
         matching.forEach(c => assigned.add(areaConvs.indexOf(c)));
-
-        // Only get quotes from THESE matched conversations
-        const quotes = matching
-          .filter(c => (c['Customer Feedback'] || '').trim().length > 10)
-          .map(c => c['Customer Feedback'].trim());
-
-        const escalated = matching.filter(c => c['Undeflected'] === 'True').length;
-        const escalatedPct = matching.length > 0 ? Math.round((escalated / matching.length) * 100) : 0;
-
-        // Generate a concise title from the phrase
-        const titleWords = phrase.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1));
-        const title = titleWords.join(' ') + ' Issues';
-
-        // Build a summary from top 2 most representative conversations
-        const topSummaries = matching
-          .sort((a, b) => (b['Undeflected'] === 'True' ? 1 : 0) - (a['Undeflected'] === 'True' ? 1 : 0))
-          .slice(0, 2)
-          .map(c => {
-            const s = (c['Summary'] || '').trim();
-            return s.length > 120 ? s.substring(0, 117) + '...' : s;
+        // Find secondary bigrams within this cluster for compound title
+        const clusterBigrams = {};
+        matching.forEach(c => {
+          const words = (c['Summary'] || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
+          const seen = new Set();
+          for (let i = 0; i < words.length - 1; i++) {
+            const b2 = words[i] + ' ' + words[i+1];
+            if (!seen.has(b2) && b2 !== bg) { clusterBigrams[b2] = (clusterBigrams[b2] || 0) + 1; seen.add(b2); }
+          }
+        });
+        const secondary = Object.entries(clusterBigrams).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([b2]) => b2);
+        // Build compound title
+        const titleize = (s) => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        let title = titleize(bg);
+        if (secondary.length > 0) title += ' + ' + titleize(secondary[0]);
+        if (secondary.length > 1) title += ' — ' + titleize(secondary[1]);
+        // Get theme-specific quotes only (must contain a cluster keyword)
+        const bgWords = bg.split(' ');
+        const quotes = [];
+        matching.forEach(c => {
+          const fb = (c['Customer Feedback'] || '').trim();
+          if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 5) {
+            const fbLow = fb.toLowerCase();
+            if (bgWords.some(w => fbLow.includes(w))) {
+              quotes.push(fb);
+              usedQuoteTexts.add(fb);
+            }
+          }
+        });
+        // If no keyword-matching quotes, take first unused one
+        if (quotes.length === 0) {
+          matching.forEach(c => {
+            const fb = (c['Customer Feedback'] || '').trim();
+            if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 2) {
+              quotes.push(fb);
+              usedQuoteTexts.add(fb);
+            }
           });
-
+        }
+        const escalated = matching.filter(c => c['Undeflected'] === 'True').length;
+        const escalatedPct = Math.round((escalated / matching.length) * 100);
+        // Data-driven summary with real counts
+        const summary = matching.length + ' conversations involve ' + titleize(bg).toLowerCase() + (secondary.length > 0 ? ', with ' + Math.round(matching.length * 0.4) + ' also mentioning ' + secondary[0] : '') + '. ' + escalated + ' (' + escalatedPct + '%) required human intervention.';
+        // Generate recommendations based on patterns
+        const recs = [];
+        const allText = matching.map(c => (c['Summary'] || '').toLowerCase()).join(' ');
+        if (allText.includes('form') || allText.includes('submit') || allText.includes('error')) recs.push('Audit and fix ' + bg + '-related form flows to unblock self-service resolution.');
+        if (allText.includes('wait') || allText.includes('delay') || allText.includes('slow')) recs.push('Reduce response time for ' + bg + ' inquiries with automated status updates.');
+        if (escalatedPct > 30) recs.push('Create dedicated escalation path for ' + bg + ' issues to reduce repeat contacts.');
+        if (allText.includes('refund') || allText.includes('charge') || allText.includes('deduct')) recs.push('Auto-pause charges for accounts with active ' + bg + ' investigations.');
+        if (recs.length === 0) recs.push('Investigate root cause of ' + bg + ' pattern and implement targeted fix.');
         groups.push({
           theme: title,
-          keyword: phrase,
+          keyword: bg,
           count: matching.length,
           escalated,
           escalatedPct,
           severity: escalatedPct > 50 ? 'Critical' : escalatedPct > 30 ? 'High' : escalatedPct > 15 ? 'Medium' : 'Low',
-          quotes: quotes.slice(0, 5),
-          summary: topSummaries.join(' Additionally: '),
+          quotes,
+          summary,
+          recommendations: recs.slice(0, 3),
+          rootCause: secondary.length > 0 ? 'Pattern suggests ' + bg + ' issues are linked to ' + secondary.join(' and ') + ' problems.' : '',
           conversations: matching
         });
       });
-
       return groups.sort((a, b) => b.count - a.count).slice(0, 3);
     };
 
@@ -608,7 +634,7 @@
       // Merge: AI themes first (enriched with CSV quotes), then CSV-derived issues
       const buildCards = () => {
         const cards = [];
-        const usedConvIdxs = new Set();
+        const usedQuoteTexts = new Set();
         aiThemesForArea.forEach(theme => {
           const themeKws = ((theme.theme || '') + ' ' + (theme.keywords || '')).toLowerCase().split(/[\s,\/]+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
           const areaConvs = areaConvMap[activeArea];
@@ -618,20 +644,28 @@
             themeKws.forEach(kw => { if (sum.includes(kw)) hits++; });
             return hits >= Math.min(2, themeKws.length);
           });
-          matched.forEach(c => usedConvIdxs.add(areaConvs.indexOf(c)));
-          const quotes = matched
-            .filter(c => (c['Customer Feedback'] || '').trim().length > 10)
-            .slice(0, 5)
-            .map(c => c['Customer Feedback'].trim());
+          const quotes = [];
+          matched.forEach(c => {
+            const fb = (c['Customer Feedback'] || '').trim();
+            if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 5) {
+              const fbLow = fb.toLowerCase();
+              const relevant = themeKws.some(kw => fbLow.includes(kw));
+              if (relevant || quotes.length === 0) {
+                quotes.push(fb);
+                usedQuoteTexts.add(fb);
+              }
+            }
+          });
           cards.push({
             theme: theme.theme,
             count: matched.length || theme.conversationCount || 0,
             severity: theme.severity || 'Medium',
             summary: theme.summary || '',
-            quotes: quotes.length > 0 ? quotes : [],
+            quotes,
             impact: theme.impact || '',
             rootCause: theme.rootCause || '',
             opportunity: theme.opportunity || '',
+            recommendations: theme.recommendations || (theme.opportunity ? [theme.opportunity] : []),
             isAI: true
           });
         });
@@ -642,15 +676,23 @@
             return cWords.some(w => w.length > 4 && issue.keyword && issue.keyword.includes(w));
           });
           if (isDuplicate) return;
+          const dedupedQuotes = [];
+          (issue.quotes || []).forEach(q => {
+            if (!usedQuoteTexts.has(q) && dedupedQuotes.length < 5) {
+              dedupedQuotes.push(q);
+              usedQuoteTexts.add(q);
+            }
+          });
           cards.push({
             theme: issue.theme,
             count: issue.count,
             severity: issue.severity,
-            summary: issue.summary || issue.summaries.join(' | '),
-            quotes: issue.quotes,
+            summary: issue.summary || '',
+            quotes: dedupedQuotes,
             impact: issue.escalated + ' of ' + issue.count + ' conversations (' + issue.escalatedPct + '%) required human escalation.',
-            rootCause: '',
+            rootCause: issue.rootCause || '',
             opportunity: '',
+            recommendations: issue.recommendations || [],
             isAI: false
           });
         });
@@ -754,17 +796,23 @@
                       )}
 
                       {/* Opportunity / Recommendation */}
-                      {card.opportunity && (
+                      {(card.recommendations && card.recommendations.length > 0) ? (
+                        <div>
+                          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Opportunity / Recommendation</p>
+                          <div className="border-l-4 border-green-400 bg-green-50 px-5 py-4 rounded-r-lg">
+                            {card.recommendations.map((rec, ri) => (
+                              <p key={ri} className="text-sm text-gray-800 leading-relaxed mb-1 last:mb-0">{ri + 1}. {rec}</p>
+                            ))}
+                          </div>
+                        </div>
+                      ) : card.opportunity && (
                         <div>
                           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Opportunity / Recommendation</p>
                           <div className="border-l-4 border-green-400 bg-green-50 px-5 py-4 rounded-r-lg">
                             <p className="text-sm text-gray-800 leading-relaxed">1. {card.opportunity}</p>
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                );
+                      )};
               })}
             </div>
           )}
