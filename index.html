@@ -171,7 +171,7 @@
                 const sum = ((c['Summary'] || c.Summary || '') + ' ' + (c['Tags'] || '')).toLowerCase();
                 let hits = 0;
                 kws.forEach(kw => { if (sum.includes(kw)) hits++; });
-                return hits >= Math.min(2, kws.length);
+                return hits >= 1;
               });
               const count = matched.length > 0 ? matched.length : Math.round(tot * Math.max(3, 18 - i * 3) / 100);
               const pct = tot > 0 ? Math.round((count / tot) * 1000) / 10 : 0;
@@ -181,23 +181,11 @@
                 const fb = (c['Customer Feedback'] || '').trim();
                 if (fb.length > 10 && !usedQuoteTexts.has(fb) && signals.length < 3) {
                   const fbLow = fb.toLowerCase();
-                  const relevant = kws.some(kw => fbLow.includes(kw));
-                  if (relevant) {
-                    signals.push(fb);
-                    usedQuoteTexts.add(fb);
-                  }
+                  signals.push(fb); usedQuoteTexts.add(fb);
                 }
               });
               // Fallback: if no keyword-matching quotes, take first unused
-              if (signals.length === 0) {
-                matched.forEach(c => {
-                  const fb = (c['Customer Feedback'] || '').trim();
-                  if (fb.length > 10 && !usedQuoteTexts.has(fb) && signals.length < 2) {
-                    signals.push(fb);
-                    usedQuoteTexts.add(fb);
-                  }
-                });
-              }
+              
               const escalated = matched.filter(c => c['Undeflected'] === 'True').length;
               return {
                 theme: t.theme,
@@ -553,22 +541,12 @@
           const fb = (c['Customer Feedback'] || '').trim();
           if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 5) {
             const fbLow = fb.toLowerCase();
-            if (bgWords.some(w => fbLow.includes(w))) {
-              quotes.push(fb);
+            quotes.push(fb);
               usedQuoteTexts.add(fb);
-            }
           }
         });
         // If no keyword-matching quotes, take first unused one
-        if (quotes.length === 0) {
-          matching.forEach(c => {
-            const fb = (c['Customer Feedback'] || '').trim();
-            if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 2) {
-              quotes.push(fb);
-              usedQuoteTexts.add(fb);
-            }
-          });
-        }
+        
         const escalated = matching.filter(c => c['Undeflected'] === 'True').length;
         const escalatedPct = Math.round((escalated / matching.length) * 100);
         // Data-driven summary with real counts
@@ -642,18 +620,14 @@
             const sum = ((c['Summary'] || '') + ' ' + (c['Tags'] || '')).toLowerCase();
             let hits = 0;
             themeKws.forEach(kw => { if (sum.includes(kw)) hits++; });
-            return hits >= Math.min(2, themeKws.length);
+            return hits >= 1;
           });
           const quotes = [];
           matched.forEach(c => {
             const fb = (c['Customer Feedback'] || '').trim();
             if (fb.length > 10 && !usedQuoteTexts.has(fb) && quotes.length < 5) {
               const fbLow = fb.toLowerCase();
-              const relevant = themeKws.some(kw => fbLow.includes(kw));
-              if (relevant || quotes.length === 0) {
-                quotes.push(fb);
-                usedQuoteTexts.add(fb);
-              }
+              quotes.push(fb); usedQuoteTexts.add(fb);
             }
           });
           cards.push({
