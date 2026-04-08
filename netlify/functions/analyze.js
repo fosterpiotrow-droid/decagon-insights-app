@@ -34,7 +34,7 @@ export default async function handler(req, context) {
     });
   }
 
-  // Client already scored & sorted â just take first 10
+  // Client already scored & sorted - just take first 10
   const sampled = conversations.slice(0, 10);
   const total = totalConversations || conversations.length;
   const undPct = total > 0 ? Math.round((undeflectedCount / total) * 100) : 0;
@@ -46,8 +46,8 @@ export default async function handler(req, context) {
   const prompt = `Perpay product analyst. Analyze ${sampled.length} top-priority support convos (from ${total} total, ${undPct}% undeflected):
 ${lines}
 
-JSON only. 3 topIssues, 4 themes max:
-{"executiveSummary":{"topIssues":[{"title":"str","pct":0,"convos":0,"description":"str"}],"narrative":"The dominant story this week is **X** â N convos (P%). ${undPct}% undeflected..."},"themes":[{"theme":"str","productArea":"Card|Marketplace|Perpay+|Core","conversationCount":0,"volumePct":0,"severity":"Critical|High|Medium|Low","summary":"str","customerSignals":["quote"],"recommendations":["fix"]}]}
+JSON only. 2 topIssues, 3 themes max:
+{"executiveSummary":{"topIssues":[{"title":"str","pct":0,"convos":0,"description":"str"}],"narrative":"The dominant story this week is **X** - N convos (P%). ${undPct}% undeflected..."},"themes":[{"theme":"str","productArea":"Card|Marketplace|Perpay+|Core","conversationCount":0,"volumePct":0,"severity":"Critical|High|Medium|Low","summary":"str","customerSignals":["quote"],"recommendations":["fix"]}]}
 Counts must be realistic fractions of ${total}. customerSignals from data above. JSON only, no markdown fences.`;
 
   let isTimeout = false;
@@ -56,7 +56,7 @@ Counts must be realistic fractions of ${total}. customerSignals from data above.
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 500,
+      max_tokens: 700,
       messages: [
         { role: 'user', content: prompt },
         { role: 'assistant', content: '{' }
@@ -85,7 +85,7 @@ Counts must be realistic fractions of ${total}. customerSignals from data above.
   } catch(err) {
     clearTimeout(tid);
     return new Response(JSON.stringify({
-      error: isTimeout ? 'Analysis timed out â please try again' : (err.message || 'Internal error'),
+      error: isTimeout ? 'Analysis timed out - please try again' : (err.message || 'Internal error'),
     }), {
       status: isTimeout ? 504 : 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
