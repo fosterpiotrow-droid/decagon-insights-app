@@ -599,7 +599,11 @@
             const userMsgs = extractUserQuotes(c, titleKws);
             userMsgs.forEach(msg => {
               if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
-                quotes.push(ms
+                quotes.push(msg);
+                usedQuoteTexts.add(msg);
+              }
+            });
+          });
           groups.push({
           theme: title,
           keyword: bg,
@@ -708,8 +712,11 @@
             const userMsgs = extractUserQuotes(c, kws);
             userMsgs.forEach(msg => {
               if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
-                quotes.push(ms
-
+                quotes.push(msg);
+                usedQuoteTexts.add(msg);
+              }
+            });
+          });
           const escalated = matched.filter(c => (c['Undeflected'] || '') === 'True').length;
           const summaryText = issue.summary ||
             matched.length + ' conversations about ' + issue.theme.toLowerCase() + '. ' +
