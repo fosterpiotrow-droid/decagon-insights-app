@@ -184,23 +184,7 @@
                   userMsgs.forEach(msg => {
                     if (signals.length < 3 && !usedQuoteTexts.has(msg)) {
                       signals.push(msg);
-                      usedQuoteTexts.add(msg);
-                    }
-                  });
-                });
-                // Pass 2: Real USER messages without keyword filter
-                if (signals.length < 2) {
-                  matched.forEach(c => {
-                    if (signals.length >= 3) return;
-                    const userMsgs = extractUserQuotes(c, []);
-                    userMsgs.forEach(msg => {
-                      if (signals.length < 3 && !usedQuoteTexts.has(msg)) {
-                        signals.push(msg);
-                        usedQuoteTexts.add(msg);
-                      }
-                    });
-                  });
-                }
+                      used
                 
               
               const escalated = matched.filter(c => c['Undeflected'] === 'True').length;
@@ -614,24 +598,7 @@
             const userMsgs = extractUserQuotes(c, titleKws);
             userMsgs.forEach(msg => {
               if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
-                quotes.push(msg);
-                usedQuoteTexts.add(msg);
-              }
-            });
-          });
-          // Pass 2: Real USER messages without keyword filter
-          if (quotes.length < 2) {
-            matching.forEach(c => {
-              if (quotes.length >= 3) return;
-              const userMsgs = extractUserQuotes(c, []);
-              userMsgs.forEach(msg => {
-                if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
-                  quotes.push(msg);
-                  usedQuoteTexts.add(msg);
-                }
-              });
-            });
-          }
+                quotes.push(ms
           groups.push({
           theme: title,
           keyword: bg,
@@ -740,24 +707,7 @@
             const userMsgs = extractUserQuotes(c, kws);
             userMsgs.forEach(msg => {
               if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
-                quotes.push(msg);
-                usedQuoteTexts.add(msg);
-              }
-            });
-          });
-          // Pass 2: Real USER messages without keyword filter
-          if (quotes.length < 2) {
-            matched.forEach(c => {
-              if (quotes.length >= 3) return;
-              const userMsgs = extractUserQuotes(c, []);
-              userMsgs.forEach(msg => {
-                if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
-                  quotes.push(msg);
-                  usedQuoteTexts.add(msg);
-                }
-              });
-            });
-          }
+                quotes.push(ms
 
           const escalated = matched.filter(c => (c['Undeflected'] || '') === 'True').length;
           const summaryText = issue.summary ||
