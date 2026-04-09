@@ -184,9 +184,10 @@
                   userMsgs.forEach(msg => {
                     if (signals.length < 3 && !usedQuoteTexts.has(msg)) {
                       signals.push(msg);
-                      used
-                
-              
+                  usedQuoteTexts.add(msg);
+                }
+              });
+            });
               const escalated = matched.filter(c => c['Undeflected'] === 'True').length;
               return {
                 theme: t.theme,
