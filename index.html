@@ -166,7 +166,7 @@
             const tot = stats.totalConversations || 1;
             const usedQuoteTexts = new Set();
             const enrichedThemes = th.map((t, i) => {
-              const kws = (t.keywords || t.theme || '').toLowerCase().split(/[,\s]+/).filter(w => w.length > 3);
+            const kws = (t.keywords || t.theme || '').toLowerCase().split(/[,\s]+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
               const matched = conversations.filter(c => {
                 const sum = ((c['Summary'] || c.Summary || '') + ' ' + (c['Tags'] || '')).toLowerCase();
                 let hits = 0;
@@ -489,7 +489,7 @@
     };
 
     // --- By Product Area Tab --------------------------------------------------
-    const STOP_WORDS = ['about','after','their','there','these','would','could','should','being','through','where','which','while','other','because','still','customer','perpay','account','order','issue','help','need','trying','asked','agent','want','just','have','been','with','they','that','this','from','were','what','when','will','your','than','them','then','each','make','like','does','into','over','also'];
+    const STOP_WORDS = ['about','after','their','there','these','would','could','should','being','through','between','before','other','which','while','where','again','further','then','once','here','both','each','more','some','such','than','into','over','only','very','just','also','with','from','this','that','have','been','were','will','what','when','they','them','your','does','doing','done','made','make','most','must','like','know','take','help','want','need','issue','issues','account','perpay','support','customer','please','getting','trying','received','contact','service','information','question','regarding'];
 
     
       // Extract real verbatim USER messages from conversation transcripts
@@ -533,16 +533,15 @@
           }
         }
         
-        // If keywords provided, prioritize messages containing them
-        if (keywords && keywords.length > 0) {
-          const kwMatched = userMsgs.filter(m => {
-            const mLow = m.toLowerCase();
-            return keywords.some(kw => mLow.includes(kw));
-          });
-          if (kwMatched.length > 0) return kwMatched;
-        }
-        return userMsgs;
-      };
+      // STRICT: Only return messages that contain at least one keyword
+      // If no keywords provided or no matches found, return empty array
+      if (!keywords || keywords.length === 0) return [];
+      const kwMatched = userMsgs.filter(m => {
+        const mLow = m.toLowerCase();
+        return keywords.some(kw => mLow.includes(kw));
+      });
+      return kwMatched;
+    };
 
       const deriveTopIssues = (areaConvs) => {
       if (areaConvs.length === 0) return [];
@@ -592,7 +591,7 @@
         // Get theme-specific quotes only (must contain a cluster keyword)
         const bgWords = bg.split(' ');
         const quotes = [];
-          const titleKws = title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          const titleKws = title.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
           // Pass 1: Real USER messages from transcripts matching title keywords
           matching.forEach(c => {
             if (quotes.length >= 3) return;
