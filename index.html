@@ -511,21 +511,43 @@
       const extractUserQuotes = (conversation, keywords) => {
         const fmtMsgs = (conversation['Formatted Messages'] || '').toString();
         if (!fmtMsgs) return [];
-        // Split by [USER] and [AI] markers
-        const parts = fmtMsgs.split(/\[(?:USER|AI)\]\n?/);
-        const userMsgs = [];
-        // Formatted Messages alternates [USER] and [AI] blocks
-        // Re-parse to identify which blocks are USER
+        
+        // Parse [USER] and [AI] blocks
         const blocks = fmtMsgs.split(/\[(USER|AI)\]\n?/);
+        const userMsgs = [];
+        
+        // Noise patterns to filter out (verification, greetings, short responses)
+        const noisePatterns = [
+          /^\d{2}\/\d{2}/,           // dates
+          /^(yes|no|ok|okay|sure|thanks|thank you|hi|hello|hey)/i,
+          /\b(social|ssn|date of birth|phone number)\b/i,
+          /^\d[\d\s\-]{6,}/,         // phone numbers / SSNs
+          /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\w+\s+){0,2}\d/i,  // DOB responses
+          /^\w+\s+\d{1,2}(st|nd|rd|th)?\s+(\d{4}|nineteen|twenty)/i,  // DOB like "November eighth nineteen..."
+          /Sent from my iPhone$/,
+          /^[A-Z][a-z]+\s+\d/,        // Name + number patterns
+        ];
+        
         for (let i = 0; i < blocks.length; i++) {
           if (blocks[i] === 'USER' && blocks[i + 1]) {
-            const msg = blocks[i + 1].trim();
-            // Filter: must be real message (not too short, not just a number/date)
-            if (msg.length > 30 && msg.length < 500 && !/^\d+$/.test(msg) && !msg.startsWith('Subject:')) {
-              userMsgs.push(msg.replace(/\n/g, ' ').trim());
-            }
+            let msg = blocks[i + 1].trim().replace(/\n/g, ' ').trim();
+            // Remove "Sent from my iPhone" suffix
+            msg = msg.replace(/\s*Sent from my iPhone\s*$/i, '').trim();
+            // Remove "Subject: ..." prefix
+            msg = msg.replace(/^Subject:\s*[^\n]*\n?\s*/i, '').trim();
+            
+            // Skip if too short, too long, or matches noise
+            if (msg.length < 40 || msg.length > 500) continue;
+            if (noisePatterns.some(p => p.test(msg))) continue;
+            
+            // Must look like a real complaint/description (contains verbs/substance)
+            const hasSubstance = /\b(want|need|try|can\'t|cannot|doesn\'t|didn\'t|won\'t|not|never|still|been|waiting|issue|problem|help|charge|pay|account|order|card|deposit|refund|deliver|ship|cancel|close|lost|stolen|fraud|replace|receive|arrive)\b/i.test(msg);
+            if (!hasSubstance) continue;
+            
+            userMsgs.push(msg);
           }
         }
+        
         // If keywords provided, prioritize messages containing them
         if (keywords && keywords.length > 0) {
           const kwMatched = userMsgs.filter(m => {
@@ -537,7 +559,7 @@
         return userMsgs;
       };
 
-const deriveTopIssues = (areaConvs) => {
+      const deriveTopIssues = (areaConvs) => {
       if (areaConvs.length === 0) return [];
       // Extract bigrams from summaries for clustering
       const bigramCounts = {};
