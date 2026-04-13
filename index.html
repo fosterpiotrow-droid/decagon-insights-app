@@ -135,7 +135,7 @@
                 });
                 const actionable = scored.filter(({ score }) => score > 0);
                 if (actionable.length === 0) { alert('No actionable conversations found in this CSV.'); onAnalyzing(false); return; }
-                const top = actionable.sort((a, b) => b.score - a.score).slice(0, 30);
+                const top = actionable.sort((a, b) => b.score - a.score).slice(0, 15);
                 const convPayload = top.map(({ conv: c }) => ({
                     summary: trunc(c['Summary'] || '', 300),
           area: deriveProductArea(c['Tags'] || c.Tags || '', c['Summary'] || ''),
