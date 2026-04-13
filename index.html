@@ -564,46 +564,66 @@
 
     const deriveTopIssues = (areaConvs) => {
       if (areaConvs.length === 0) return [];
-      const NOISE_PHRASES = new Set(['customer experiencing','despite having','customer asking','customer wants','customer needs','customer says','customer called','customer reported','customer requesting','customer inquiring','customer states','customer claims','unable to','trying to','need to','want to','how to','not able','would like','can you','could you','please help','help with','asking about','called about','reached out','contact us','follow up']);
-      const SUBSTANCE_RE = /\b(payment|deposit|order|card|credit|shipping|refund|return|delivery|charge|fee|balance|account|login|password|cancel|subscription|tracking|replace|activate|lock|fraud|stolen|lost|score|report|bureau|membership|perpay|item|product|purchase|bill|statement|limit|decline|approve|verify|verification|address|update|close|transfer|cashback|reward|dispute|late|overdue|collection|payoff|amount|schedule|autopay|direct)\b/;
-      const phraseCounts = {};
+      const NOISE_WORDS = new Set(['customer','experiencing','despite','having','asking','wants','needs','says','called','reported','requesting','inquiring','states','claims','unable','trying','need','want','how','not','able','would','like','can','could','please','help','with','about','their','there','the','and','for','that','this','from','has','have','been','was','were','are','but','also','into','they','them','she','her','his','him','get','got','just','back','out','being','will','had','did','does','contact','contacted','reached','follow']);
+      const SUBSTANCE_RE = /\b(payment|deposit|order|card|credit|shipping|refund|return|delivery|charge|fee|balance|account|login|password|cancel|subscription|tracking|replace|activate|lock|fraud|stolen|lost|score|report|bureau|membership|perpay|item|product|purchase|bill|statement|limit|decline|approve|verify|verification|address|update|close|transfer|cashback|reward|dispute|late|overdue|collection|payoff|amount|schedule|autopay|direct|increase|decrease|missing|wrong|incorrect|pending|hold|freeze|block|denied|rejected)\b/;
+      // Extract n-grams (2,3,4) from summaries for richer theme names
+      const ngramCounts = {};
       areaConvs.forEach(c => {
-        const words = (c['Summary'] || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+        const words = (c['Summary'] || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 2 && !NOISE_WORDS.has(w));
         const seen = new Set();
-        for (let i = 0; i < words.length - 1; i++) {
-          const bg = words[i] + ' ' + words[i+1];
-          if (!seen.has(bg) && !NOISE_PHRASES.has(bg) && SUBSTANCE_RE.test(bg)) {
-            phraseCounts[bg] = (phraseCounts[bg] || 0) + 1;
-            seen.add(bg);
+        // Generate 2-grams, 3-grams, and 4-grams
+        for (let n = 2; n <= 4; n++) {
+          for (let i = 0; i <= words.length - n; i++) {
+            const gram = words.slice(i, i + n).join(' ');
+            if (!seen.has(gram) && SUBSTANCE_RE.test(gram)) {
+              ngramCounts[gram] = (ngramCounts[gram] || { count: 0, n: n });
+              ngramCounts[gram].count++;
+              seen.add(gram);
+            }
           }
         }
       });
-      const topPhrases = Object.entries(phraseCounts)
-        .filter(([, count]) => count >= 3)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 20)
-        .map(([phrase]) => phrase);
+      // Prefer longer n-grams (more specific); score = count * (1 + 0.5 * (n-2))
+      const scored = Object.entries(ngramCounts)
+        .filter(([, v]) => v.count >= 3)
+        .map(([gram, v]) => ({ gram, count: v.count, n: v.n, score: v.count * (1 + 0.4 * (v.n - 2)) }))
+        .sort((a, b) => b.score - a.score);
+      // Deduplicate: if a longer gram contains a shorter one with similar count, prefer longer
+      const selected = [];
+      const usedGrams = new Set();
+      scored.forEach(item => {
+        if (selected.length >= 15) return;
+        const dominated = selected.some(s => s.gram.includes(item.gram) || item.gram.includes(s.gram));
+        if (!dominated) { selected.push(item); usedGrams.add(item.gram); }
+      });
       const groups = [];
       const assigned = new Set();
       const usedQuoteTexts = new Set();
-      topPhrases.forEach(phrase => {
+      selected.forEach(({ gram }) => {
         if (groups.length >= 5) return;
         const matching = areaConvs.filter((c, idx) => {
           if (assigned.has(idx)) return false;
-          return (c['Summary'] || '').toLowerCase().includes(phrase);
+          return (c['Summary'] || '').toLowerCase().includes(gram);
         });
         if (matching.length < 2) return;
         matching.forEach(c => assigned.add(areaConvs.indexOf(c)));
         const titleize = (s) => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        const title = titleize(phrase) + ' Issues';
+        const title = titleize(gram);
         const escalated = matching.filter(c => (c['Undeflected'] || '') === 'True').length;
         const escalatedPct = matching.length > 0 ? Math.round(escalated / matching.length * 100) : 0;
-        const phraseWords = phrase.split(' ');
+        const gramWords = gram.split(' ');
         const quotes = [];
         matching.forEach(c => {
           if (quotes.length >= 3) return;
-          const userMsgs = extractUserQuotes(c, phraseWords);
-          userMsgs.forEach(msg => {
+          const userMsgs = extractUserQuotes(c, gramWords);
+          // Require quote matches at least 2 keywords for specificity
+          const strictMsgs = userMsgs.filter(m => {
+            const mLow = m.toLowerCase();
+            const hits = gramWords.filter(kw => mLow.includes(kw)).length;
+            return hits >= Math.min(2, gramWords.length);
+          });
+          const pool = strictMsgs.length > 0 ? strictMsgs : userMsgs.slice(0, 1);
+          pool.forEach(msg => {
             if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
               quotes.push(msg);
               usedQuoteTexts.add(msg);
@@ -613,16 +633,16 @@
         const retentionRisk = escalatedPct > 40 ? 'High' : escalatedPct > 20 ? 'Medium' : 'Low';
         groups.push({
           theme: title,
-          keyword: phrase,
+          keyword: gram,
           count: matching.length,
           escalated,
           escalatedPct,
           retentionRisk,
           severity: escalatedPct > 50 ? 'Critical' : escalatedPct > 30 ? 'High' : escalatedPct > 15 ? 'Medium' : 'Low',
           quotes: quotes,
-          summary: matching.length + ' customers contacted support about ' + phrase + '. ' + escalated + ' (' + escalatedPct + '%) required human escalation, indicating ' + retentionRisk.toLowerCase() + ' retention risk.',
+          summary: matching.length + ' customers contacted support about ' + gram + '. ' + escalated + ' (' + escalatedPct + '%) required human escalation, indicating ' + retentionRisk.toLowerCase() + ' retention risk.',
           recommendations: [],
-          rootCause: 'Recurring pattern of ' + phrase + ' contacts suggests a systemic issue requiring product attention.',
+          rootCause: 'Recurring pattern of ' + gram + ' contacts suggests a systemic issue requiring product attention.',
           conversations: matching
         });
       });
@@ -710,19 +730,27 @@
             return kws.some(kw => sum.includes(kw));
           });
 
-          // Extract up to 3 real verbatim customer quotes from transcripts
-          const quotes = [];
-          // Pass 1: Real USER messages from transcripts that match keywords
-          matched.forEach(c => {
-            if (quotes.length >= 3) return;
-            const userMsgs = extractUserQuotes(c, kws);
-            userMsgs.forEach(msg => {
-              if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
-                quotes.push(msg);
-                usedQuoteTexts.add(msg);
-              }
-            });
+        // Extract up to 3 real verbatim customer quotes strictly tied to this theme
+        const quotes = [];
+        const themePhrase = (issue.theme || '').toLowerCase();
+        matched.forEach(c => {
+          if (quotes.length >= 3) return;
+          const userMsgs = extractUserQuotes(c, kws);
+          // Score each quote by how many theme keywords it contains
+          const scored = userMsgs.map(msg => {
+            const mLow = msg.toLowerCase();
+            const hits = kws.filter(kw => mLow.includes(kw)).length;
+            const phraseHit = themePhrase.split(/\s+/).filter(w => w.length > 3 && mLow.includes(w)).length;
+            return { msg, relevance: hits + phraseHit };
+          }).filter(s => s.relevance >= Math.min(2, kws.length))
+            .sort((a, b) => b.relevance - a.relevance);
+          scored.forEach(({ msg }) => {
+            if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
+              quotes.push(msg);
+              usedQuoteTexts.add(msg);
+            }
           });
+        });
           const escalated = matched.filter(c => (c['Undeflected'] || '') === 'True').length;
           const summaryText = issue.summary ||
             matched.length + ' conversations about ' + issue.theme.toLowerCase() + '. ' +
