@@ -40,9 +40,12 @@
     const deriveProductArea = (tags, summary) => {
       if (!tags && !summary) return 'General';
       const t = ((tags || '') + ' ' + (summary || '')).toLowerCase();
-      // Perpay+ FIRST: credit reporting, subscription, membership, fees
-      if (t.includes('perpay+') || t.includes('perpay plus') || t.includes('credit report') || t.includes('credit score') || t.includes('credit bureau') || t.includes('subscription') || t.includes('membership') || (t.includes('cancel') && (t.includes('subscription') || t.includes('membership') || t.includes('perpay+')))) return 'Perpay+';
-      // Card: credit card, debit, visa, mastercard (NOT general 'credit' which could be credit reporting)
+      // Perpay+: ONLY if explicitly mentions perpay+/perpay plus, OR credit report/score/bureau WITH perpay context
+      const hasPerpayExplicit = t.includes('perpay+') || t.includes('perpay plus') || t.includes('perpay membership') || t.includes('perpay subscription');
+      const hasCreditReporting = t.includes('credit report') || t.includes('credit score') || t.includes('credit bureau') || t.includes('credit monitoring');
+      const hasSubCancel = (t.includes('cancel') || t.includes('subscription') || t.includes('membership')) && (t.includes('perpay') || t.includes('fee') || t.includes('monthly'));
+      if (hasPerpayExplicit || (hasCreditReporting && t.includes('perpay')) || hasSubCancel) return 'Perpay+';
+      // Card: credit card, debit, visa, mastercard
       if (t.includes('credit card') || t.includes('debit') || t.includes('visa') || t.includes('mastercard') || t.includes('card activation') || t.includes('card replace') || t.includes('lost card') || t.includes('stolen card') || t.includes('card lock') || t.includes('card block')) return 'Card';
       // Marketplace: shopping, orders, shipping, delivery, returns
       if (t.includes('marketplace') || t.includes('shopping') || t.includes('order') || t.includes('shipping') || t.includes('delivery') || t.includes('return') || t.includes('tracking') || t.includes('item') || t.includes('product') || t.includes('purchase')) return 'Marketplace';
