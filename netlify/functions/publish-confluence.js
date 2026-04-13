@@ -1,8 +1,7 @@
 /**
  * Netlify Serverless Function: publish-confluence
- * Publishes weekly insights to a Confluence page using the new data format.
+ * Publishes weekly insights to a Confluence page using v1 REST API.
  */
-
 function validateEnvVars() {
   const required = ['CONFLUENCE_DOMAIN', 'CONFLUENCE_EMAIL', 'CONFLUENCE_API_TOKEN'];
   const missing = required.filter(v => !process.env[v]);
@@ -19,13 +18,6 @@ function esc(text) {
   return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function sevColor(s) {
-  if (s === 'Critical') return '#DC2626';
-  if (s === 'High') return '#EA580C';
-  if (s === 'Medium') return '#D97706';
-  return '#6B7280';
-}
-
 function buildPage(insights, csvStats) {
   const { executiveSummary = {}, themes = [] } = insights;
   const { topIssues = [], narrative = '' } = executiveSummary;
@@ -34,7 +26,6 @@ function buildPage(insights, csvStats) {
   const dateRange = csvStats?.dateRange || '';
 
   let html = '';
-
   html += '<ac:structured-macro ac:name="info"><ac:rich-text-body>';
   html += '<p><strong>Weekly Decagon Insights</strong> -- ' + esc(dateRange) + ' | Published ' + new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) + '</p>';
   html += '<p>' + total + ' conversations analyzed | ' + undPct + '% undeflected rate</p>';
@@ -61,20 +52,17 @@ function buildPage(insights, csvStats) {
       html += '<ac:parameter ac:name="title">' + (i+1) + '. [' + esc(theme.productArea) + '] ' + esc(theme.theme) + ' -- ' + esc(theme.severity) + ' | ' + (theme.conversationCount || 0) + ' convos (' + (theme.volumePct || 0) + '%)</ac:parameter>';
       html += '<ac:rich-text-body>';
       html += '<p>' + esc(theme.summary) + '</p>';
-
       if (theme.customerSignals && theme.customerSignals.length > 0) {
         html += '<p><strong>Customer Signals:</strong></p>';
         theme.customerSignals.forEach(sig => {
           html += '<blockquote><em>"' + esc(sig) + '"</em></blockquote>';
         });
       }
-
       if (theme.recommendations && theme.recommendations.length > 0) {
         html += '<p><strong>Recommendations:</strong></p><ul>';
         theme.recommendations.forEach(rec => { html += '<li>' + esc(rec) + '</li>'; });
         html += '</ul>';
       }
-
       html += '</ac:rich-text-body></ac:structured-macro>';
     });
   }
@@ -84,7 +72,7 @@ function buildPage(insights, csvStats) {
 }
 
 async function fetchPage(pageId) {
-  const url = 'https://' + process.env.CONFLUENCE_DOMAIN + '/wiki/api/v2/pages/' + pageId + '?body-format=storage';
+  const url = 'https://' + process.env.CONFLUENCE_DOMAIN + '/wiki/rest/api/content/' + pageId + '?expand=version,body.storage';
   const resp = await fetch(url, {
     method: 'GET',
     headers: { 'Authorization': getAuthHeader(), 'Accept': 'application/json' },
@@ -94,17 +82,21 @@ async function fetchPage(pageId) {
 }
 
 async function updatePage(pageId, pageData, newBody) {
-  const url = 'https://' + process.env.CONFLUENCE_DOMAIN + '/wiki/api/v2/pages/' + pageId;
+  const url = 'https://' + process.env.CONFLUENCE_DOMAIN + '/wiki/rest/api/content/' + pageId;
   const resp = await fetch(url, {
     method: 'PUT',
-    headers: { 'Authorization': getAuthHeader(), 'Accept': 'application/json', 'Content-Type': 'application/json' },
+    headers: {
+      'Authorization': getAuthHeader(),
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify({
       id: pageData.id,
-      type: pageData.type,
-      status: pageData.status || 'current',
+      type: pageData.type || 'page',
+      status: 'current',
       title: pageData.title,
       version: { number: (pageData.version?.number || 0) + 1 },
-      body: { representation: 'storage', value: newBody },
+      body: { storage: { representation: 'storage', value: newBody } },
     }),
   });
   if (!resp.ok) throw new Error('Update page failed: ' + resp.status + ' ' + await resp.text());
@@ -112,8 +104,12 @@ async function updatePage(pageId, pageData, newBody) {
 }
 
 export default async function handler(req, context) {
-  const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
-
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json'
+  };
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
 
   try {
@@ -121,7 +117,6 @@ export default async function handler(req, context) {
     const body = await req.json();
     const pageId = body.pageId || '4451237894';
     const { insights, csvStats } = body;
-
     if (!insights) {
       return new Response(JSON.stringify({ error: 'Missing: insights' }), { status: 400, headers });
     }
@@ -131,7 +126,11 @@ export default async function handler(req, context) {
     const updated = await updatePage(pageId, currentPage, newBody);
     const pageUrl = 'https://' + process.env.CONFLUENCE_DOMAIN + '/wiki/spaces/PD/pages/' + updated.id;
 
-    return new Response(JSON.stringify({ success: true, pageUrl, publishedAt: new Date().toISOString(), version: updated.version?.number }), { status: 200, headers });
+    return new Response(JSON.stringify({
+      success: true, pageUrl,
+      publishedAt: new Date().toISOString(),
+      version: updated.version?.number
+    }), { status: 200, headers });
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers });
   }
