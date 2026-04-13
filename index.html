@@ -40,13 +40,10 @@
     const deriveProductArea = (tags, summary) => {
       if (!tags && !summary) return 'General';
       const t = ((tags || '') + ' ' + (summary || '')).toLowerCase();
-      // Perpay+: ONLY if explicitly mentions perpay+/perpay plus, OR credit report/score/bureau WITH perpay context
-      const hasPerpayExplicit = t.includes('perpay+') || t.includes('perpay plus') || t.includes('perpay membership') || t.includes('perpay subscription');
-      const hasCreditReporting = t.includes('credit report') || t.includes('credit score') || t.includes('credit bureau') || t.includes('credit monitoring');
-      const hasSubCancel = (t.includes('cancel') || t.includes('subscription') || t.includes('membership')) && (t.includes('perpay') || t.includes('fee') || t.includes('monthly'));
-      if (hasPerpayExplicit || (hasCreditReporting && t.includes('perpay')) || hasSubCancel) return 'Perpay+';
-      // Card: credit card, debit, visa, mastercard
-      if (t.includes('credit card') || t.includes('debit') || t.includes('visa') || t.includes('mastercard') || t.includes('card activation') || t.includes('card replace') || t.includes('lost card') || t.includes('stolen card') || t.includes('card lock') || t.includes('card block')) return 'Card';
+      // Card FIRST: perpay card, credit card, debit, etc.
+      if (t.includes('perpay card') || t.includes('credit card') || t.includes('debit') || t.includes('visa') || t.includes('mastercard') || t.includes('card activation') || t.includes('card replace') || t.includes('lost card') || t.includes('stolen card') || t.includes('card lock') || t.includes('card block') || t.includes('card balance') || t.includes('card payment')) return 'Card';
+      // Perpay+: ONLY explicit "perpay+" or "perpay plus" mentions
+      if (t.includes('perpay+') || t.includes('perpay plus') || t.includes('perpay+ subscription') || t.includes('perpay+ membership') || t.includes('perpay+ cancel') || t.includes('perpay+ fee')) return 'Perpay+';
       // Marketplace: shopping, orders, shipping, delivery, returns
       if (t.includes('marketplace') || t.includes('shopping') || t.includes('order') || t.includes('shipping') || t.includes('delivery') || t.includes('return') || t.includes('tracking') || t.includes('item') || t.includes('product') || t.includes('purchase')) return 'Marketplace';
       return 'General';
@@ -568,8 +565,8 @@
 
     const deriveTopIssues = (areaConvs, areaName) => {
       if (areaConvs.length === 0) return [];
-      const NOISE_WORDS = new Set(['customer','experiencing','despite','having','asking','wants','needs','says','called','reported','requesting','inquiring','states','claims','unable','trying','need','want','how','not','able','would','like','can','could','please','help','with','about','their','there','the','and','for','that','this','from','has','have','been','was','were','are','but','also','into','they','them','she','her','his','him','get','got','just','back','out','being','will','had','did','does','contact','contacted','reached','follow']);
-      const areaGeneric = { 'Card': ['card','cards','credit','debit','visa','mastercard'], 'Marketplace': ['marketplace','order','orders','item','items','product','products','purchase','shopping'], 'Perpay+': ['perpay','subscription','membership'], 'General': ['account','help','issue','support'] };
+      const NOISE_WORDS = new Set(['perpay','customer','experiencing','despite','having','asking','wants','needs','says','called','reported','requesting','inquiring','states','claims','unable','trying','need','want','how','not','able','would','like','can','could','please','help','with','about','their','there','the','and','for','that','this','from','has','have','been','was','were','are','but','also','into','they','them','she','her','his','him','get','got','just','back','out','being','will','had','did','does','contact','contacted','reached','follow','regarding','related','issue','issues','problem','problems','question','questions','concern','concerns','request','requests','information','assistance','resolution','status','update','account','service','agent','support','team']);
+      const areaGeneric = { 'Card': ['perpay','card','cards','credit','debit','visa','mastercard','account'], 'Marketplace': ['perpay','marketplace','order','orders','item','items','product','products','purchase','shopping'], 'Perpay+': ['perpay','subscription','membership','service','plan'], 'General': ['perpay','account','help','issue','support','contact','customer','card','cards','credit','debit','deposit','direct','order','orders','item','items','product','products','shipping','delivery','marketplace','shopping','purchase','return','tracking'] };
       (areaGeneric[areaName] || []).forEach(w => NOISE_WORDS.add(w));
       const SUBSTANCE_RE = /\b(payment|deposit|order|card|credit|shipping|refund|return|delivery|charge|fee|balance|account|login|password|cancel|subscription|tracking|replace|activate|lock|fraud|stolen|lost|score|report|bureau|membership|perpay|item|product|purchase|bill|statement|limit|decline|approve|verify|verification|address|update|close|transfer|cashback|reward|dispute|late|overdue|collection|payoff|amount|schedule|autopay|direct|increase|decrease|missing|wrong|incorrect|pending|hold|freeze|block|denied|rejected)\b/;
       // Extract n-grams (2,3,4) from summaries for richer theme names
@@ -729,12 +726,7 @@
         allIssues.slice(0, 3).forEach(issue => {
           // Match conversations to this issue by keywords
         // Area-generic terms are useless for matching within a product area
-        const areaGenericTerms = {
-          'Card': ['card','cards','credit','debit','visa','mastercard','account'],
-          'Marketplace': ['marketplace','order','orders','item','items','product','products','purchase','shopping'],
-          'Perpay+': ['perpay','subscription','membership','service','plan'],
-          'General': ['account','help','issue','support','contact','customer']
-        };
+        const areaGenericTerms = { 'Card': ['perpay','card','cards','credit','debit','visa','mastercard','account'], 'Marketplace': ['perpay','marketplace','order','orders','item','items','product','products','purchase','shopping'], 'Perpay+': ['perpay','subscription','membership','service','plan'], 'General': ['perpay','account','help','issue','support','contact','customer','card','cards','credit','debit','deposit','direct','order','orders','item','items','product','products','shipping','delivery','marketplace','shopping'] };
         const areaStopWords = (areaGenericTerms[activeArea] || []);
         const kws = issue.keywords.toLowerCase().split(/[\s,]+/)
           .filter(w => w.length > 3 && !STOP_WORDS.includes(w) && !areaStopWords.includes(w));
