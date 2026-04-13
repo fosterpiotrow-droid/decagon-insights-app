@@ -1020,7 +1020,80 @@
     };
 
     // --- App ------------------------------------------------------------------
-    const App = () => {
+    const HistoryTab = ({ setActiveTab }) => {
+    var saved = [];
+    try { saved = JSON.parse(localStorage.getItem('perpay_report_history') || '[]'); } catch(e) {}
+
+    var deleteReport = (i) => {
+      if (confirm('Delete this report?')) {
+        var s = JSON.parse(localStorage.getItem('perpay_report_history') || '[]');
+        s.splice(i, 1);
+        localStorage.setItem('perpay_report_history', JSON.stringify(s));
+        setActiveTab('upload');
+        setTimeout(() => setActiveTab('history'), 50);
+      }
+    };
+
+    var downloadReport = (report) => {
+      var blob = new Blob([report.htmlReport], { type: 'text/html' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'Perpay_Insights_' + (report.dateRange || 'report').replace(/[^a-zA-Z0-9]/g, '_') + '.html';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    var previewReport = (report) => {
+      var w = window.open('', '_blank');
+      w.document.write(report.htmlReport);
+      w.document.close();
+    };
+
+    if (saved.length === 0) {
+      return (
+        <div>
+          <h2 className="text-xl font-bold text-gray-800 mb-6">Report History</h2>
+          <p className="text-gray-500">No saved reports yet. Upload a CSV and run an analysis to generate your first report.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        <h2 className="text-xl font-bold text-gray-800 mb-6">Report History</h2>
+        <div className="space-y-4">
+          {saved.map((report, i) => (
+            <div key={i} className="border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="font-semibold text-gray-800">{report.dateRange || 'Unknown date range'}</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Analyzed {new Date(report.savedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                  <div className="flex gap-4 mt-2 text-sm text-gray-600">
+                    <span>{report.totalConversations || 0} conversations</span>
+                    <span>{report.undeflectedPct || 0}% undeflected</span>
+                    <span>{report.themeCount || 0} themes</span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => downloadReport(report)}
+                    className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Download</button>
+                  <button onClick={() => previewReport(report)}
+                    className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200">Preview</button>
+                  <button onClick={() => deleteReport(i)}
+                    className="px-3 py-1.5 bg-red-50 text-red-600 text-sm rounded-lg hover:bg-red-100">Delete</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const App = () => {
         const [activeTab, setActiveTab] = useState('upload');
         const [csvData, setCsvData] = useState(null);
         const [csvStats, setCsvStats] = useState(null);
@@ -1098,153 +1171,82 @@
     };
 
         const tabs = [
-            { key: 'upload',        label: 'Upload',           disabled: false },
-            { key: 'insights',      label: 'Insights Report',  disabled: !insightsData },
-            { key: 'conversations', label: 'By Product Area',  disabled: !csvData },
-            { key: 'confluence',    label: 'Confluence Sync',  disabled: false },
-              { key: 'history', label: 'History', disabled: false },
+      { key: 'upload', label: 'Upload', disabled: false },
+      { key: 'insights', label: 'Insights Report', disabled: !insightsData },
+      { key: 'conversations', label: 'By Product Area', disabled: !csvData },
+      { key: 'confluence', label: 'Confluence Sync', disabled: false },
+      { key: 'history', label: 'History', disabled: false },
     ];
 
-        return (
-            <div className="min-h-screen bg-gray-50">
-                <header className="bg-white shadow-sm sticky top-0 z-50">
-                    <div className="max-w-7xl mx-auto px-6 py-5">
-                        <div className="flex items-center gap-3">
-                            
-                            <div>
-                                <h1 className="text-2xl font-bold text-gray-900">Perpay -  Weekly Product Decagon Insights</h1>
-                                <p className="text-sm text-gray-500 mt-0.5">Upload Decagon CSV > Auto-analyze > Publish to Confluence</p>
-                            </div>
-                        </div>
-                    </div>
-                </header>
-
-                <main className="max-w-7xl mx-auto px-6 py-8">
-                    <div className="flex gap-0 border-b border-gray-200 bg-white rounded-t-xl overflow-hidden">
-                        {tabs.map(({ key, label, disabled }) => (
-                            <button key={key}
-                                onClick={() => !disabled && setActiveTab(key)}
-                                disabled={disabled}
-                                className={`tab-button ${activeTab === key ? 'active' : ''}`}>
-                                {label}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="bg-white rounded-b-xl p-8 min-h-96 shadow-sm">
-                        {activeTab === 'upload' && (
-                            <UploadTab
-                                onDataLoaded={setCsvData}
-                                onAnalyzing={setIsAnalyzing}
-                                isAnalyzing={isAnalyzing}
-                                conversations={csvData}
-                                onInsightsGenerated={handleInsightsGenerated}
-                            />
-                        )}
-                        {activeTab === 'insights' && (
-                <div>
-                  <div className="flex justify-end mb-4 gap-2">
-                    <button onClick={() => {
-                      const html = generateHTMLReport(insightsData, csvStats);
-                      const blob = new Blob([html], { type: 'text/html' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'Perpay_Insights_' + (csvStats?.dateRange || 'report').replace(/[^a-zA-Z0-9]/g, '_') + '.html';
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2">
-                      Download Report
-                    </button>
-                    <button onClick={() => {
-                      const html = generateHTMLReport(insightsData, csvStats);
-                      const w = window.open('', '_blank');
-                      w.document.write(html);
-                      w.document.close();
-                    }} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
-                      Preview
-                    </button>
-                  </div>
-                  <InsightsReportTab insightsData={insightsData} csvStats={csvStats} onPublish={() => setActiveTab('confluence')} isPublishing={false} />
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white shadow-sm sticky top-0 z-30 border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <h1 className="text-2xl font-bold text-gray-800">Perpay - Weekly Product Decagon Insights</h1>
+            <p className="text-sm text-gray-500 mt-1">Upload Decagon CSV &gt; Auto-analyze &gt; Publish to Confluence</p>
+          </div>
+        </header>
+        <main className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-t-xl overflow-hidden">
+            {tabs.map(({ key, label, disabled }) => (
+              <button key={key} onClick={() => !disabled && setActiveTab(key)} disabled={disabled}
+                className={"tab-button " + (activeTab === key ? "active" : "")}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="bg-white rounded-b-xl p-8 min-h-96 shadow-sm">
+            {activeTab === 'upload' && (
+              <UploadTab onDataLoaded={setCsvData} onAnalyzing={setIsAnalyzing} isAnalyzing={isAnalyzing}
+                conversations={csvData} onInsightsGenerated={handleInsightsGenerated} />
+            )}
+            {activeTab === 'insights' && (
+              <div>
+                <div className="flex justify-end mb-4 gap-2">
+                  <button onClick={() => {
+                    var html = generateHTMLReport(insightsData, csvStats);
+                    var blob = new Blob([html], { type: 'text/html' });
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Perpay_Insights_' + (csvStats && csvStats.dateRange ? csvStats.dateRange : 'report').replace(/[^a-zA-Z0-9]/g, '_') + '.html';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+                    Download Report
+                  </button>
+                  <button onClick={() => {
+                    var html = generateHTMLReport(insightsData, csvStats);
+                    var w = window.open('', '_blank');
+                    w.document.write(html);
+                    w.document.close();
+                  }} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
+                    Preview
+                  </button>
                 </div>
-              )}
-                                isPublishing={false}
-                            />
-                        )}
-                        {activeTab === 'conversations' && (
-                            <ConversationsTab conversations={csvData} insightsData={insightsData} />
-                        )}
-                        {activeTab === 'confluence' && (
-                            <ConfluenceSyncTab insightsData={insightsData} csvStats={csvStats} />
-                        )}
-
-              {activeTab === 'history' && (
-                <div>
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-bold text-gray-800">Report History</h2>
-                  </div>
-                  {(() => {
-                    let saved = [];
-                    try { saved = JSON.parse(localStorage.getItem('perpay_report_history') || '[]'); } catch(e) {}
-                    if (saved.length === 0) return <p className="text-gray-500">No saved reports yet. Upload a CSV and run an analysis to generate your first report.</p>;
-                    return (
-                      <div className="space-y-4">
-                        {saved.map((report, i) => (
-                          <div key={i} className="border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h3 className="font-semibold text-gray-800">{report.dateRange || 'Unknown date range'}</h3>
-                                <p className="text-sm text-gray-500 mt-1">Analyzed {new Date(report.savedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                                <div className="flex gap-4 mt-2 text-sm text-gray-600">
-                                  <span>{report.totalConversations || 0} conversations</span>
-                                  <span>{report.undeflectedPct || 0}% undeflected</span>
-                                  <span>{report.themeCount || 0} themes</span>
-                                </div>
-                              </div>
-                              <div className="flex gap-2">
-                                <button onClick={() => {
-                                  const blob = new Blob([report.htmlReport], { type: 'text/html' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = 'Perpay_Insights_' + (report.dateRange || 'report').replace(/[^a-zA-Z0-9]/g, '_') + '.html';
-                                  a.click();
-                                  URL.revokeObjectURL(url);
-                                }} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Download</button>
-                                <button onClick={() => {
-                                  const w = window.open('', '_blank');
-                                  w.document.write(report.htmlReport);
-                                  w.document.close();
-                                }} className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200">Preview</button>
-                                <button onClick={() => {
-                                  if (confirm('Delete this report?')) {
-                                    let s = JSON.parse(localStorage.getItem('perpay_report_history') || '[]');
-                                    s.splice(i, 1);
-                                    localStorage.setItem('perpay_report_history', JSON.stringify(s));
-                                    setActiveTab('upload');
-                                    setTimeout(() => setActiveTab('history'), 50);
-                                  }
-                                }} className="px-3 py-1.5 bg-red-50 text-red-600 text-sm rounded-lg hover:bg-red-100">Delete</button>
-                              </div>
-                            </div>
-                            {report.narrative && <p className="text-sm text-gray-600 mt-3 border-t pt-3" dangerouslySetInnerHTML={{ __html: report.narrative.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }} />}
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}                    </div>
-                </main>
-
-                <footer className="bg-white border-t border-gray-200 mt-12">
-                    <div className="max-w-7xl mx-auto px-6 py-5 text-center text-sm text-gray-400">
-                        Perpay -  Weekly Product Decagon Insights Tool
-                    </div>
-                </footer>
-            </div>
-        );
-    };
+                <InsightsReportTab insightsData={insightsData} csvStats={csvStats}
+                  onPublish={() => setActiveTab('confluence')} isPublishing={false} />
+              </div>
+            )}
+            {activeTab === 'conversations' && (
+              <ConversationsTab conversations={csvData} insightsData={insightsData} />
+            )}
+            {activeTab === 'confluence' && (
+              <ConfluenceSyncTab insightsData={insightsData} csvStats={csvStats} />
+            )}
+            {activeTab === 'history' && (
+              <HistoryTab setActiveTab={setActiveTab} />
+            )}
+          </div>
+        </main>
+        <footer className="bg-white border-t border-gray-200 mt-12">
+          <div className="max-w-7xl mx-auto px-6 py-5 text-center text-sm text-gray-400">
+            Perpay - Weekly Product Decagon Insights Tool
+          </div>
+        </footer>
+      </div>
+    );
+  };};
 
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
