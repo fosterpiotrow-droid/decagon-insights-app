@@ -621,21 +621,22 @@
                 usedQuoteTexts.add(msg);
               }
             });
-          });
-          groups.push({
+        });
+        const escalated = matching.filter(c => (c['Undeflected'] || '') === 'True').length;
+        const escalatedPct = matching.length > 0 ? Math.round(escalated / matching.length * 100) : 0;
+        const recs = [];
+        groups.push({
           theme: title,
           keyword: bg,
           count: matching.length,
           escalated,
           escalatedPct,
           severity: escalatedPct > 50 ? 'Critical' : escalatedPct > 30 ? 'High' : escalatedPct > 15 ? 'Medium' : 'Low',
-          quotes,
-          summary,
-          recommendations: recs.slice(0, 3),
-          rootCause: secondary.length > 0 ? 'Pattern suggests ' + bg + ' issues are linked to ' + secondary.join(' and ') + ' problems.' : '',
-          conversations: matching,
           quotes: quotes,
-          summary: matching.length + ' conversations about ' + title.toLowerCase() + '. ' + matching.filter(c => (c['Undeflected'] || '') === 'True').length + ' required human escalation.'
+          summary: matching.length + ' conversations about ' + title.toLowerCase() + '. ' + escalated + ' (' + (matching.length > 0 ? Math.round(escalated / matching.length * 100) : 0) + '%) escalated to human agents.',
+          recommendations: recs.slice(0, 3),
+          rootCause: secondary.length > 0 ? 'Pattern suggests ' + bg + ' issues are linked to ' + secondary.map(s => s).join(', ') + '.' : 'Pattern detected from conversation clustering.',
+          conversations: matching
         });
       });
       return groups.sort((a, b) => b.count - a.count).slice(0, 3);
