@@ -728,28 +728,38 @@
         // Area-generic terms are useless for matching within a product area
         const areaGenericTerms = { 'Card': ['perpay','card','cards','credit','debit','visa','mastercard','account'], 'Marketplace': ['perpay','marketplace','order','orders','item','items','product','products','purchase','shopping'], 'Perpay+': ['perpay','subscription','membership','service','plan'], 'General': ['perpay','account','help','issue','support','contact','customer','card','cards','credit','debit','deposit','direct','order','orders','item','items','product','products','shipping','delivery','marketplace','shopping'] };
         const areaStopWords = (areaGenericTerms[activeArea] || []);
-        const kws = issue.keywords.toLowerCase().split(/[\s,]+/)
-          .filter(w => w.length > 3 && !STOP_WORDS.includes(w) && !areaStopWords.includes(w));
+        // Use FULL theme title words (not filtered) for matching, plus bigrams for phrase matching
+        const titleWords = (issue.theme || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+        const kws = titleWords.filter(w => !STOP_WORDS.includes(w) && !areaStopWords.includes(w));
+        // Generate bigrams from theme title for phrase-level matching
+        const bigrams = [];
+        for (let i = 0; i < titleWords.length - 1; i++) {
+          const bg = titleWords[i] + ' ' + titleWords[i + 1];
+          if (!areaStopWords.includes(titleWords[i]) || !areaStopWords.includes(titleWords[i + 1])) {
+            bigrams.push(bg);
+          }
+        }
 
-          const matched = issue.matchedConvs || areaConvs.filter(c => {
-            const sum = ((c['Summary'] || '') + ' ' + (c['Tags'] || '')).toLowerCase();
-            return kws.some(kw => sum.includes(kw));
-          });
+        const matched = issue.matchedConvs || areaConvs.filter(c => {
+          const sum = ((c['Summary'] || '') + ' ' + (c['Tags'] || '')).toLowerCase();
+          return kws.some(kw => sum.includes(kw));
+        });
 
         // Extract up to 3 real verbatim customer quotes strictly tied to this theme
         const quotes = [];
-        const themePhrase = (issue.theme || '').toLowerCase();
         matched.forEach(c => {
           if (quotes.length >= 3) return;
-          const userMsgs = extractUserQuotes(c, kws);
-          // Score each quote by how many theme keywords it contains
+          const userMsgs = extractUserQuotes(c, kws.length > 0 ? kws : titleWords);
+          // Score each quote by bigram matches (high value) + keyword matches
           const scored = userMsgs.map(msg => {
             const mLow = msg.toLowerCase();
-            const hits = kws.filter(kw => mLow.includes(kw)).length;
-            const phraseHit = themePhrase.split(/\s+/).filter(w => w.length > 3 && mLow.includes(w)).length;
-            return { msg, relevance: hits + phraseHit };
-          }).filter(s => s.relevance >= Math.min(2, kws.length))
-            .sort((a, b) => b.relevance - a.relevance);
+            const bigramHits = bigrams.filter(bg => mLow.includes(bg)).length;
+            const kwHits = kws.filter(kw => mLow.includes(kw)).length;
+            // Bigram match is worth 3 points, keyword match worth 1
+            return { msg, relevance: (bigramHits * 3) + kwHits };
+          }).filter(s => s.relevance >= 3) // Require strong relevance: at least 1 bigram match or 3+ keyword hits
+          .sort((a, b) => b.relevance - a.relevance);
+
           scored.forEach(({ msg }) => {
             if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
               quotes.push(msg);
