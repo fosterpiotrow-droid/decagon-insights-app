@@ -562,80 +562,67 @@
       return kwMatched;
     };
 
-      const deriveTopIssues = (areaConvs) => {
+    const deriveTopIssues = (areaConvs) => {
       if (areaConvs.length === 0) return [];
-      // Extract bigrams from summaries for clustering
-      const bigramCounts = {};
+      const NOISE_PHRASES = new Set(['customer experiencing','despite having','customer asking','customer wants','customer needs','customer says','customer called','customer reported','customer requesting','customer inquiring','customer states','customer claims','unable to','trying to','need to','want to','how to','not able','would like','can you','could you','please help','help with','asking about','called about','reached out','contact us','follow up']);
+      const SUBSTANCE_RE = /\b(payment|deposit|order|card|credit|shipping|refund|return|delivery|charge|fee|balance|account|login|password|cancel|subscription|tracking|replace|activate|lock|fraud|stolen|lost|score|report|bureau|membership|perpay|item|product|purchase|bill|statement|limit|decline|approve|verify|verification|address|update|close|transfer|cashback|reward|dispute|late|overdue|collection|payoff|amount|schedule|autopay|direct)\b/;
+      const phraseCounts = {};
       areaConvs.forEach(c => {
-        const words = (c['Summary'] || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
+        const words = (c['Summary'] || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 2);
         const seen = new Set();
         for (let i = 0; i < words.length - 1; i++) {
           const bg = words[i] + ' ' + words[i+1];
-          if (!seen.has(bg)) { bigramCounts[bg] = (bigramCounts[bg] || 0) + 1; seen.add(bg); }
+          if (!seen.has(bg) && !NOISE_PHRASES.has(bg) && SUBSTANCE_RE.test(bg)) {
+            phraseCounts[bg] = (phraseCounts[bg] || 0) + 1;
+            seen.add(bg);
+          }
         }
       });
-      const topBigrams = Object.entries(bigramCounts)
+      const topPhrases = Object.entries(phraseCounts)
         .filter(([, count]) => count >= 3)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 30)
-        .map(([bg]) => bg);
-      // Build clusters: each bigram groups its matching conversations
+        .slice(0, 20)
+        .map(([phrase]) => phrase);
       const groups = [];
       const assigned = new Set();
       const usedQuoteTexts = new Set();
-      topBigrams.forEach(bg => {
+      topPhrases.forEach(phrase => {
         if (groups.length >= 5) return;
         const matching = areaConvs.filter((c, idx) => {
           if (assigned.has(idx)) return false;
-          return (c['Summary'] || '').toLowerCase().includes(bg);
+          return (c['Summary'] || '').toLowerCase().includes(phrase);
         });
         if (matching.length < 2) return;
         matching.forEach(c => assigned.add(areaConvs.indexOf(c)));
-        // Find secondary bigrams within this cluster for compound title
-        const clusterBigrams = {};
-        matching.forEach(c => {
-          const words = (c['Summary'] || '').toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
-          const seen = new Set();
-          for (let i = 0; i < words.length - 1; i++) {
-            const b2 = words[i] + ' ' + words[i+1];
-            if (!seen.has(b2) && b2 !== bg) { clusterBigrams[b2] = (clusterBigrams[b2] || 0) + 1; seen.add(b2); }
-          }
-        });
-        const secondary = Object.entries(clusterBigrams).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([b2]) => b2);
-        // Build compound title
         const titleize = (s) => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        let title = titleize(bg);
-        if (secondary.length > 0) title += ' + ' + titleize(secondary[0]);
-        if (secondary.length > 1) title += ' — ' + titleize(secondary[1]);
-        // Get theme-specific quotes only (must contain a cluster keyword)
-        const bgWords = bg.split(' ');
-        const quotes = [];
-          const titleKws = title.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !STOP_WORDS.includes(w));
-          // Pass 1: Real USER messages from transcripts matching title keywords
-          matching.forEach(c => {
-            if (quotes.length >= 3) return;
-            const userMsgs = extractUserQuotes(c, titleKws);
-            userMsgs.forEach(msg => {
-              if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
-                quotes.push(msg);
-                usedQuoteTexts.add(msg);
-              }
-            });
-        });
+        const title = titleize(phrase) + ' Issues';
         const escalated = matching.filter(c => (c['Undeflected'] || '') === 'True').length;
         const escalatedPct = matching.length > 0 ? Math.round(escalated / matching.length * 100) : 0;
-        const recs = [];
+        const phraseWords = phrase.split(' ');
+        const quotes = [];
+        matching.forEach(c => {
+          if (quotes.length >= 3) return;
+          const userMsgs = extractUserQuotes(c, phraseWords);
+          userMsgs.forEach(msg => {
+            if (quotes.length < 3 && !usedQuoteTexts.has(msg)) {
+              quotes.push(msg);
+              usedQuoteTexts.add(msg);
+            }
+          });
+        });
+        const retentionRisk = escalatedPct > 40 ? 'High' : escalatedPct > 20 ? 'Medium' : 'Low';
         groups.push({
           theme: title,
-          keyword: bg,
+          keyword: phrase,
           count: matching.length,
           escalated,
           escalatedPct,
+          retentionRisk,
           severity: escalatedPct > 50 ? 'Critical' : escalatedPct > 30 ? 'High' : escalatedPct > 15 ? 'Medium' : 'Low',
           quotes: quotes,
-          summary: matching.length + ' conversations about ' + title.toLowerCase() + '. ' + escalated + ' (' + (matching.length > 0 ? Math.round(escalated / matching.length * 100) : 0) + '%) escalated to human agents.',
-          recommendations: recs.slice(0, 3),
-          rootCause: secondary.length > 0 ? 'Pattern suggests ' + bg + ' issues are linked to ' + secondary.map(s => s).join(', ') + '.' : 'Pattern detected from conversation clustering.',
+          summary: matching.length + ' customers contacted support about ' + phrase + '. ' + escalated + ' (' + escalatedPct + '%) required human escalation, indicating ' + retentionRisk.toLowerCase() + ' retention risk.',
+          recommendations: [],
+          rootCause: 'Recurring pattern of ' + phrase + ' contacts suggests a systemic issue requiring product attention.',
           conversations: matching
         });
       });
@@ -747,8 +734,8 @@
             severity: issue.severity,
             summary: summaryText,
             quotes: quotes,
-            impact: issue.impact || 'Increases support volume and customer friction in ' + activeArea + '.',
-            rootCause: issue.rootCause || 'Pattern detected from conversation clustering.',
+            impact: issue.impact || issue.count + ' customers affected. ' + (issue.escalatedPct || Math.round((matched.filter(c => (c['Undeflected'] || '') === 'True').length / Math.max(matched.length, 1)) * 100)) + '% escalation rate signals retention risk and unresolved product friction.' + '.',
+            rootCause: issue.rootCause || 'Recurring customer contacts about this issue suggest a gap in product experience or self-service tooling.',
             opportunity: issue.opportunity || '',
             recommendations: issue.recommendations || [],
           });
@@ -879,7 +866,7 @@
 
     // --- Confluence Sync Tab --------------------------------------------------
     const ConfluenceSyncTab = ({ insightsData, csvStats }) => {
-        const [pageId, setPageId] = useState('44859393');
+        const [pageId, setPageId] = useState('4451237894');
         const [publishStatus, setPublishStatus] = useState(null);
         const [lastPublished, setLastPublished] = useState(null);
 
