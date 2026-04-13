@@ -1224,8 +1224,7 @@
                     Preview
                   </button>
                 </div>
-                <InsightsReportTab insightsData={insightsData} csvStats={csvStats}
-                  onPublish={() => setActiveTab('confluence')} isPublishing={false} />
+                <InsightsReportTab insightsData={insightsData} csvStats={csvStats} onPublish={function(){ setActiveTab('confluence'); }} isPublishing={false} />
               </div>
             )}
             {activeTab === 'conversations' && (
