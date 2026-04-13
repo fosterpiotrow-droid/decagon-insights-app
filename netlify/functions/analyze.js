@@ -3,9 +3,9 @@ import Anthropic from '@anthropic-ai/sdk';
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export default async function handler(req, context) {
-  const h = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
+  const h = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: { ...h, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } });
+    return new Response(null, { status: 204, headers: { ...h, 'Access-Control-Allow-Origin': '*' } });
   }
 
   let body;
@@ -13,28 +13,39 @@ export default async function handler(req, context) {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: h });
   }
 
-  const { conversations = [], totalConversations = 0, undeflectedCount = 0 } = body;
+  const { conversations = [], totalConversations = 0, undeflectedCount = 0, dateRange = {} } = body;
   if (!conversations.length) {
     return new Response(JSON.stringify({ error: 'No conversations' }), { status: 400, headers: h });
   }
 
   const total = totalConversations || conversations.length;
   const undPct = total > 0 ? Math.round((undeflectedCount / total) * 100) : 0;
-  const sample = conversations.slice(0, 12);
+  const weekStr = dateRange.start && dateRange.end ? dateRange.start + ' to ' + dateRange.end : 'this week';
 
-  const lines = sample.map((c, i) =>
-    (i+1) + '. ' + (c.summary || '').substring(0, 100) + (c.undeflected === 'True' ? ' [ESC]' : '') + (c.customerFeedback ? ' | FB: "' + c.customerFeedback.substring(0, 50) + '"' : '')
+  // Group by area if provided, otherwise list all
+  const lines = conversations.slice(0, 30).map((c, i) =>
+    (i+1) + '. [' + (c.area || 'General') + '] ' + (c.summary || '').substring(0, 200) + (c.undeflected === 'True' ? ' [ESCALATED]' : '') + (c.customerFeedback ? ' Feedback: ' + (c.customerFeedback || '').substring(0, 100) : '')
   ).join('\n');
 
-  const prompt = `Perpay support analyst. ${total} convos this week, ${undPct}% undeflected. Samples:
+  const prompt = `Perpay product insights analyst. ${total} support conversations this week (${weekStr}), ${undPct}% escalated to human agents. Conversations labeled by product area:
 ${lines}
-Return JSON only: {"narrative":"2-3 sentence executive summary with bold **key phrases**","themes":[{"theme":"short name","area":"Card|Marketplace|Perpay+|Core","severity":"Critical|High|Medium|Low","summary":"2-3 sentence description of the pattern","impact":"why this matters to business/retention, 1 sentence","rootCause":"likely technical or process root cause, 1 sentence","opportunity":"specific actionable fix, 1 sentence","keywords":"3 comma-separated search terms for matching"}]}
-Give exactly 5 themes sorted by severity then volume. Keep each string value under 120 chars. JSON only, no markdown fences.`;
+
+Analyze these conversations and generate actionable product themes. For EACH product area that has conversations (Card, Marketplace, Perpay+, General), identify the top 2-3 most important issues.
+
+Return JSON only: {"narrative":"2-3 sentence executive summary with **bold key phrases**","themes":[{"theme":"specific descriptive title like Credit Limit Increase Requests or Payment Not Received To Account","area":"Card|Marketplace|Perpay+|General","severity":"Critical|High|Medium|Low","conversationCount":0,"summary":"detailed 2-3 sentence description of the specific customer problem","impact":"why this matters for product/retention in 1-2 sentences","rootCause":"specific hypothesis about what is causing this issue","opportunity":"specific product improvement recommendation","recommendations":["specific actionable recommendation 1","specific actionable recommendation 2","specific actionable recommendation 3"]}]}
+
+IMPORTANT:
+- Theme titles must be SPECIFIC and DESCRIPTIVE (e.g. "Credit Limit Increase Requests", "Payment Not Received To Account", "Accidental Perpay+ Enrollment") - NOT generic (e.g. "Card Issues", "Payment Problems")
+- Each theme MUST include "area" matching one of: Card, Marketplace, Perpay+, General
+- Generate 8-12 themes total, covering all product areas with conversations
+- Summaries should describe the actual customer pain point, not just restate the title
+- Recommendations should be specific product changes, not generic advice
+- Keep each string value under 200 chars. Keep recommendations under 100 chars each.`;
 
   try {
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 900,
+      max_tokens: 3000,
       messages: [
         { role: 'user', content: prompt },
         { role: 'assistant', content: '{' }
@@ -48,7 +59,7 @@ Give exactly 5 themes sorted by severity then volume. Keep each string value und
       parsed = JSON.parse(raw);
     } catch(e1) {
       let fixed = raw.replace(/,"[^"]*$/, '').replace(/,"?$/, '');
-      const closers = [']}', '}]}', '"}]}'];
+      const closers = [']}', '}]}', '"}]}', '"]},]}', '""]}]}'];
       for (const closer of closers) {
         try { parsed = JSON.parse(fixed + closer); break; } catch(e2) {}
       }
@@ -70,7 +81,7 @@ Give exactly 5 themes sorted by severity then volume. Keep each string value und
   } catch (err) {
     const msg = err.message || 'Unknown error';
     if (msg.includes('timeout') || msg.includes('FUNCTION_INVOCATION_TIMEOUT')) {
-      return new Response(JSON.stringify({ error: 'Analysis timed out. Try again.' }), { status: 504, headers: h });
+      return new Response(JSON.stringify({ error: 'Analysis timed out. Try again.' }), { status: 500, headers: h });
     }
     return new Response(JSON.stringify({ error: msg }), { status: 500, headers: h });
   }
